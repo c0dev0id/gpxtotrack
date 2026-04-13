@@ -73,6 +73,7 @@ export function convert(gpxString, options = {}) {
 
   const stats = {
     routes: 0,
+    duplicateRoutesDropped: 0,
     inputRtepts: 0,
     inputRpts: 0,
     outputRtepts: 0,
@@ -82,7 +83,17 @@ export function convert(gpxString, options = {}) {
     bounds: null,
   };
 
-  const inputRtes      = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
+  const rawInputRtes    = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
+  const inputRtes       = deduplicateRoutes(rawInputRtes);
+  stats.duplicateRoutesDropped = rawInputRtes.length - inputRtes.length;
+
+  // Detach ALL original routes from the DOM immediately. They remain readable
+  // while detached, so inputRtes can still be processed below. Dropped duplicates
+  // simply stay detached and are never re-added.
+  for (const rte of rawInputRtes) {
+    if (rte.parentNode) rte.parentNode.removeChild(rte);
+  }
+
   const hasExistingTrks = childrenByNS(gpx, GPX_NS, 'trk').length > 0;
 
   stats.inputWaypoints = childrenByNS(gpx, GPX_NS, 'wpt').length;
@@ -224,7 +235,6 @@ export function convert(gpxString, options = {}) {
     }
 
     newRoutes.push(newRte);
-    rte.parentNode.removeChild(rte);
   }
 
   // Strip routing metadata from preserved elements (wpts etc.) unless keeping.
@@ -269,6 +279,56 @@ export function convert(gpxString, options = {}) {
     ? xml
     : '<?xml version="1.0" encoding="UTF-8"?>\n' + xml;
   return { gpx: out, stats };
+}
+
+/**
+ * Deduplicate routes that share the same start+end coordinates.
+ * When duplicates exist the "plainest" variant is kept:
+ *   priority 0 – no Garmin extensions on rtepts (plain GPX 1.1)       ← preferred
+ *   priority 1 – gpxx:RoutePointExtension on rtepts (BaseCamp format)
+ *   priority 2 – trp: extensions on rtepts (Trip Extension variant)    ← dropped first
+ */
+function deduplicateRoutes(rtes) {
+  function routeKey(rte) {
+    const rtepts = childrenByNS(rte, GPX_NS, 'rtept');
+    if (rtepts.length < 2) return null;
+    const first = rtepts[0], last = rtepts[rtepts.length - 1];
+    return `${first.getAttribute('lat')},${first.getAttribute('lon')}|${last.getAttribute('lat')},${last.getAttribute('lon')}`;
+  }
+
+  function routePriority(rte) {
+    for (const rt of childrenByNS(rte, GPX_NS, 'rtept')) {
+      const ext = firstChildElNS(rt, GPX_NS, 'extensions');
+      if (!ext) continue;
+      for (let c = ext.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType !== 1) continue;
+        if (c.namespaceURI === TRP_NS)  return 2;
+        if (c.namespaceURI === GPXX_NS && c.localName === 'RoutePointExtension') return 1;
+      }
+    }
+    return 0;
+  }
+
+  // Pass 1: find the lowest (best) priority for each key.
+  const bestPriority = new Map();
+  for (const rte of rtes) {
+    const key = routeKey(rte);
+    if (key === null) continue;
+    const p = routePriority(rte);
+    if (!bestPriority.has(key) || p < bestPriority.get(key)) bestPriority.set(key, p);
+  }
+
+  // Pass 2: keep the first route at the best priority for each key; always keep keyless routes.
+  const seen = new Set();
+  return rtes.filter(rte => {
+    const key = routeKey(rte);
+    if (key === null) return true;
+    const p = routePriority(rte);
+    if (p !== bestPriority.get(key)) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**

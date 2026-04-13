@@ -321,4 +321,18 @@ export const tests = [
     log('third-party: rumo: elements survive with thirdPartyExt=keep', rumoEls.length > 0, 'got ' + rumoEls.length);
   },
 
+  async function duplicate_routes_deduplication({ log, convert, parse, loadFixture, GPX_NS }) {
+    const src = await loadFixture('duplicate-routes.gpx');
+    const { gpx, stats } = convert(src);
+    const doc = parse(gpx);
+    const root = doc.documentElement;
+    const rtes = root.getElementsByTagNameNS(GPX_NS, 'rte');
+    log('duplicate-routes: 1 route in output', rtes.length === 1, 'got ' + rtes.length);
+    const name = rtes[0] ? firstChildElNS(rtes[0], GPX_NS, 'name')?.textContent : null;
+    log('duplicate-routes: surviving route is the plain one',
+        name === 'Route A (plain GPX)', 'got ' + name);
+    log('duplicate-routes: stats.duplicateRoutesDropped == 2',
+        stats.duplicateRoutesDropped === 2, 'got ' + stats.duplicateRoutesDropped);
+  },
+
 ];

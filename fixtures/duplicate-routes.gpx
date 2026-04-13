@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Three exports of the same route (Scenic Motorcycle Navigation App style):
+     plain GPX, Garmin Trip Extension variant, Garmin RoutePoint Extension variant.
+     Only the plain route should survive conversion. -->
+<gpx version="1.1" creator="Scenic"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+     xmlns:trp="http://www.garmin.com/xmlschemas/TripExtensions/v1">
+  <!-- Route 1: plain GPX 1.1 — this is the one to keep -->
+  <rte>
+    <name>Route A (plain GPX)</name>
+    <rtept lat="49.0000000" lon="9.0000000">
+      <name>Start</name>
+    </rtept>
+    <rtept lat="49.0500000" lon="9.0500000">
+      <name>Via 1</name>
+    </rtept>
+    <rtept lat="49.1000000" lon="9.1000000">
+      <name>End</name>
+    </rtept>
+  </rte>
+  <!-- Route 2: same geometry, Garmin Trip Extension variant -->
+  <rte>
+    <name>Route A (Garmin Trip Extension)</name>
+    <rtept lat="49.0000000" lon="9.0000000">
+      <name>Start</name>
+      <extensions>
+        <trp:ViaPoint/>
+      </extensions>
+    </rtept>
+    <rtept lat="49.0500000" lon="9.0500000">
+      <name>Via 1</name>
+      <extensions>
+        <trp:ShapingPoint/>
+      </extensions>
+    </rtept>
+    <rtept lat="49.1000000" lon="9.1000000">
+      <name>End</name>
+      <extensions>
+        <trp:ViaPoint/>
+      </extensions>
+    </rtept>
+  </rte>
+  <!-- Route 3: same geometry, Garmin RoutePoint Extension variant (sparse rtepts + embedded shaping) -->
+  <rte>
+    <name>Route A (Garmin RoutePoint Extension)</name>
+    <rtept lat="49.0000000" lon="9.0000000">
+      <name>Start</name>
+      <extensions>
+        <gpxx:RoutePointExtension>
+          <gpxx:rpt lat="49.0500000" lon="9.0500000"/>
+        </gpxx:RoutePointExtension>
+      </extensions>
+    </rtept>
+    <rtept lat="49.1000000" lon="9.1000000">
+      <name>End</name>
+    </rtept>
+  </rte>
+</gpx>
