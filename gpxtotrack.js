@@ -1,25 +1,40 @@
-// gpxtotrack — convert a Garmin GPX route into an enriched GPX containing
-// a clean GPX 1.1 route (shape preserved via extra rtepts), a dense track
-// flattened from the Garmin RoutePointExtension, and the waypoints.
+// gpxtotrack — convert a Garmin GPX route file into an enriched GPX containing
+// a clean GPX 1.1 route (densified from Garmin's shaping points), a dense track
+// flattened from RoutePointExtension, and the waypoints.
 //
 // Pure function: no DOM side effects, runs in any environment that provides
 // DOMParser and XMLSerializer.
 
 export const GPX_NS  = 'http://www.topografix.com/GPX/1/1';
 export const GPXX_NS = 'http://www.garmin.com/xmlschemas/GpxExtensions/v3';
-const XSI_NS  = 'http://www.w3.org/2001/XMLSchema-instance';
+const XSI_NS   = 'http://www.w3.org/2001/XMLSchema-instance';
+const TRP_NS   = 'http://www.garmin.com/xmlschemas/TripExtensions/v1';
+const CTX_NS   = 'http://www.garmin.com/xmlschemas/CreationTimeExtension/v1';
+const WPTX1_NS = 'http://www.garmin.com/xmlschemas/WaypointExtension/v1';
 
-// Namespaces whose elements are always stripped from the output.
+// Namespaces whose elements are always stripped from the output (no user choice).
 const DROP_NAMESPACES = new Set([
   'http://www.garmin.com/xmlschemas/TrackPointExtension/v1',
   'http://www.garmin.com/xmlschemas/TrackPointExtension/v2',
   'http://www.garmin.com/xmlschemas/TrackStatsExtension/v1',
   'http://www.garmin.com/xmlschemas/PowerExtension/v1',
   'http://www.garmin.com/xmlschemas/AccelerationExtension/v1',
-  'http://www.garmin.com/xmlschemas/WaypointExtension/v1',
+  WPTX1_NS,  // address/phone auto-converted to <desc> before strip
+  CTX_NS,    // CreationTime auto-converted to <time> before strip
+  'http://www.garmin.com/xmlschemas/AdventuresExtensions/v1',
+  'http://www.garmin.com/xmlschemas/TripMetaDataExtensions/v1',
+  'http://www.garmin.com/xmlschemas/ViaPointTransportationModeExtensions/v1',
+  'http://www.garmin.com/xmlschemas/PressureExtension/v1',
+  'http://www.garmin.com/xmlschemas/VideoExtension/v1',
 ]);
 
-// Within the gpxx namespace we only keep these three local names.
+// All Garmin + standard GPX namespaces. Anything outside this set is third-party.
+const KNOWN_NAMESPACES = new Set([
+  GPX_NS, GPXX_NS, XSI_NS, TRP_NS, CTX_NS, WPTX1_NS,
+  ...DROP_NAMESPACES,
+]);
+
+// Within the gpxx namespace only these local names are ever kept in the output.
 const GPXX_KEEP = new Set(['RouteExtension', 'TrackExtension', 'DisplayColor']);
 
 /**
@@ -27,16 +42,23 @@ const GPXX_KEEP = new Set(['RouteExtension', 'TrackExtension', 'DisplayColor']);
  *
  * @param {string} gpxString - input GPX XML.
  * @param {object} [options]
- * @param {number} [options.toleranceM=10]      - RDP tolerance in meters for the output route.
+ * @param {number}  [options.toleranceM=10]           - RDP tolerance in meters for the output route.
  * @param {boolean} [options.keepRteptWaypoints=false] - also emit labeled rtepts as <wpt>.
- * @param {DOMParser} [options.DOMParserImpl]   - optional DOMParser override (for Node tests).
+ * @param {'keep'|'remove'} [options.displayColor='keep']    - keep or remove gpxx:DisplayColor.
+ * @param {'keep'|'remove'} [options.routingMeta='remove']   - keep or remove trp: routing metadata.
+ * @param {'keep'|'remove'} [options.thirdPartyExt='remove'] - keep or remove non-Garmin extensions.
+ * @param {DOMParser}     [options.DOMParserImpl]
  * @param {XMLSerializer} [options.XMLSerializerImpl]
  * @returns {{ gpx: string, stats: object }}
  */
 export function convert(gpxString, options = {}) {
-  const toleranceM = options.toleranceM ?? 10;
+  const toleranceM       = options.toleranceM ?? 10;
   const keepRteptWaypoints = !!options.keepRteptWaypoints;
-  const Parser = options.DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);
+  const displayColor     = options.displayColor   ?? 'keep';
+  const routingMeta      = options.routingMeta    ?? 'remove';
+  const thirdPartyExt    = options.thirdPartyExt  ?? 'remove';
+
+  const Parser     = options.DOMParserImpl    || (typeof DOMParser    !== 'undefined' ? DOMParser    : null);
   const Serializer = options.XMLSerializerImpl || (typeof XMLSerializer !== 'undefined' ? XMLSerializer : null);
   if (!Parser || !Serializer) {
     throw new Error('DOMParser / XMLSerializer not available in this environment');
@@ -60,28 +82,33 @@ export function convert(gpxString, options = {}) {
     bounds: null,
   };
 
-  const inputRtes = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
-  if (inputRtes.length === 0) throw new Error('No <rte> elements in input');
+  const inputRtes      = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
+  const hasExistingTrks = childrenByNS(gpx, GPX_NS, 'trk').length > 0;
 
-  // Count existing waypoints.
   stats.inputWaypoints = childrenByNS(gpx, GPX_NS, 'wpt').length;
 
+  // Auto-convert wpt extension data (address → desc, ctx:CreationTime → time)
+  // before any stripping so the data isn't lost.
+  for (const wpt of childrenByNS(gpx, GPX_NS, 'wpt')) {
+    convertWptExtensionData(wpt, doc);
+  }
+
   const newWaypoints = [];
-  const newTracks   = [];
-  const newRoutes   = [];
+  const newTracks    = [];
+  const newRoutes    = [];
 
   for (const rte of inputRtes) {
     stats.routes++;
     const rteptEls = Array.from(childrenByNS(rte, GPX_NS, 'rtept'));
     stats.inputRtepts += rteptEls.length;
 
-    // Build merged ordered point list with metadata tags.
+    // Build merged ordered point list with metadata.
     const merged = [];
     for (let i = 0; i < rteptEls.length; i++) {
       const rt = rteptEls[i];
       const lat = parseFloat(rt.getAttribute('lat'));
       const lon = parseFloat(rt.getAttribute('lon'));
-      const ele = firstChildText(rt, GPX_NS, 'ele');
+      const ele  = firstChildText(rt, GPX_NS, 'ele');
       const time = firstChildText(rt, GPX_NS, 'time');
       const named = hasAnyNamedField(rt);
       merged.push({
@@ -106,8 +133,7 @@ export function convert(gpxString, options = {}) {
       }
     }
 
-    // Dedupe consecutive identical coords. If a rtept duplicates the previous
-    // point (usually the last rpt), promote its metadata onto the survivor.
+    // Dedupe consecutive identical coords.
     const deduped = [];
     for (const p of merged) {
       const last = deduped[deduped.length - 1];
@@ -115,29 +141,38 @@ export function convert(gpxString, options = {}) {
         deduped.push(p);
       } else if (p.fromRtept && !last.fromRtept) {
         last.fromRtept = true;
-        last.rteptEl = p.rteptEl;
-        last.ele = last.ele || p.ele;
-        last.time = last.time || p.time;
-        last.anchor = last.anchor || p.anchor;
+        last.rteptEl   = p.rteptEl;
+        last.ele       = last.ele  || p.ele;
+        last.time      = last.time || p.time;
+        last.anchor    = last.anchor || p.anchor;
       }
     }
 
-    // ---- Build the new track: every deduped point becomes a trkpt. ----
-    const trk = doc.createElementNS(GPX_NS, 'trk');
-    copyChildren(rte, trk, GPX_NS, ['name', 'desc', 'cmt', 'src', 'link', 'type', 'number']);
-    const trkseg = doc.createElementNS(GPX_NS, 'trkseg');
-    for (const p of deduped) {
-      const trkpt = doc.createElementNS(GPX_NS, 'trkpt');
-      trkpt.setAttribute('lat', formatCoord(p.lat));
-      trkpt.setAttribute('lon', formatCoord(p.lon));
-      if (p.ele)  trkpt.appendChild(textEl(doc, GPX_NS, 'ele',  p.ele));
-      if (p.time) trkpt.appendChild(textEl(doc, GPX_NS, 'time', p.time));
-      trkseg.appendChild(trkpt);
-    }
-    trk.appendChild(trkseg);
-    stats.outputTrkpts += deduped.length;
+    // Build the new track only when the input has no pre-existing tracks.
+    if (!hasExistingTrks) {
+      const trk = doc.createElementNS(GPX_NS, 'trk');
+      copyChildren(rte, trk, GPX_NS, ['name', 'desc', 'cmt', 'src', 'link', 'type', 'number']);
+      const trkseg = doc.createElementNS(GPX_NS, 'trkseg');
+      for (const p of deduped) {
+        const trkpt = doc.createElementNS(GPX_NS, 'trkpt');
+        trkpt.setAttribute('lat', formatCoord(p.lat));
+        trkpt.setAttribute('lon', formatCoord(p.lon));
+        if (p.ele)  trkpt.appendChild(textEl(doc, GPX_NS, 'ele',  p.ele));
+        if (p.time) trkpt.appendChild(textEl(doc, GPX_NS, 'time', p.time));
+        trkseg.appendChild(trkpt);
+      }
+      trk.appendChild(trkseg);
+      stats.outputTrkpts += deduped.length;
 
-    // ---- Route densification via Ramer–Douglas–Peucker. ----
+      if (displayColor === 'keep') {
+        const color = readRouteDisplayColor(rte);
+        if (color) trk.appendChild(buildColorExtensions(doc, 'TrackExtension', color));
+      }
+
+      newTracks.push(trk);
+    }
+
+    // Route densification via Ramer–Douglas–Peucker.
     const keepFlags = rdpWithAnchors(deduped, toleranceM);
     const newRte = doc.createElementNS(GPX_NS, 'rte');
     copyChildren(rte, newRte, GPX_NS, ['name', 'desc', 'cmt', 'src', 'link', 'type', 'number']);
@@ -152,6 +187,10 @@ export function convert(gpxString, options = {}) {
       if (p.time) rtept.appendChild(textEl(doc, GPX_NS, 'time', p.time));
       if (p.fromRtept && p.rteptEl) {
         copyChildren(p.rteptEl, rtept, GPX_NS, ['name', 'desc', 'cmt', 'sym', 'type', 'link']);
+        // Optionally copy trp: extensions from original rtept to output rtept.
+        if (routingMeta === 'keep') {
+          copyNsChildren(p.rteptEl, rtept, doc, GPX_NS, TRP_NS);
+        }
         if (keepRteptWaypoints && hasAnyNamedField(p.rteptEl)) {
           newWaypoints.push(buildWaypointFromRtept(doc, p));
         }
@@ -160,32 +199,64 @@ export function convert(gpxString, options = {}) {
       stats.outputRtepts++;
     }
 
-    // ---- Color passthrough (the one retained Garmin extension). ----
-    const color = readRouteDisplayColor(rte);
-    if (color) {
-      newRte.appendChild(buildColorExtensions(doc, 'RouteExtension', color));
-      trk.appendChild(buildColorExtensions(doc, 'TrackExtension', color));
+    // Collect route-level extensions to attach to the new <rte>.
+    const rteExts = [];
+    if (displayColor === 'keep') {
+      const color = readRouteDisplayColor(rte);
+      if (color) {
+        const rext = doc.createElementNS(GPXX_NS, 'gpxx:RouteExtension');
+        const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
+        dc.textContent = color;
+        rext.appendChild(dc);
+        rteExts.push(rext);
+      }
+    }
+    if (routingMeta === 'keep') {
+      collectNsChildren(rte, GPX_NS, TRP_NS, rteExts);
+    }
+    if (thirdPartyExt === 'keep') {
+      collectThirdPartyChildren(rte, GPX_NS, rteExts);
+    }
+    if (rteExts.length) {
+      const wrap = doc.createElementNS(GPX_NS, 'extensions');
+      for (const el of rteExts) wrap.appendChild(el);
+      newRte.appendChild(wrap);
     }
 
     newRoutes.push(newRte);
-    newTracks.push(trk);
-
     rte.parentNode.removeChild(rte);
   }
 
-  // ---- Strip Garmin extensions from the whole tree (wpt ext, stray gpxtpx, etc). ----
+  // Strip routing metadata from preserved elements (wpts etc.) unless keeping.
+  if (routingMeta === 'remove') stripNamespace(gpx, TRP_NS);
+
+  // Strip always-drop namespaces (TrackPointExtension, WaypointExtension, ctx:, etc.).
   stripDropNamespaces(gpx);
-  stripGpxxExcept(gpx, GPXX_KEEP);
+
+  // Strip gpxx elements; conditionally keep color-related ones.
+  const gpxxKeep = displayColor === 'keep' ? GPXX_KEEP : new Set();
+  stripGpxxExcept(gpx, gpxxKeep);
+
+  // Defensive: remove any leftover RoutePointExtension.
   removeElementsByNS(gpx, GPXX_NS, 'RoutePointExtension');
+
+  // Strip third-party extensions from preserved elements unless keeping.
+  if (thirdPartyExt === 'remove') stripThirdPartyExtensions(gpx);
+
   removeEmptyExtensions(gpx);
 
-  // Count waypoints before we add new ones, for stats (input count already captured).
-  // Re-insert the new routes and tracks, plus any new waypoints, in schema order:
-  //   metadata, wpt*, rte*, trk*, extensions*
+  // Insert new elements; existing tracks survive via insertInOrder's bucket sort.
   insertInOrder(gpx, newWaypoints, newRoutes, newTracks);
   stats.outputWaypoints = childrenByNS(gpx, GPX_NS, 'wpt').length;
 
-  // ---- Namespace / metadata hygiene. ----
+  // Count trkpts for the existing-track path (synthesis path already counted above).
+  if (hasExistingTrks) {
+    for (const trk of childrenByNS(gpx, GPX_NS, 'trk')) {
+      stats.outputTrkpts += trk.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
+    }
+  }
+
+  // Namespace / metadata hygiene.
   gpx.setAttribute('version', '1.1');
   gpx.setAttribute('creator', 'gpxtotrack');
   refreshMetadataTime(gpx, doc);
@@ -201,9 +272,7 @@ export function convert(gpxString, options = {}) {
 }
 
 /**
- * Compute a lightweight summary of the input GPX without performing any
- * conversion. Used by the UI to show "what's in this file" before the user
- * commits to converting.
+ * Compute a lightweight summary of the input GPX without converting.
  *
  * @param {string} gpxString
  * @param {object} [options]
@@ -216,6 +285,14 @@ export function convert(gpxString, options = {}) {
  *   tracks: number,
  *   trkpts: number,
  *   bounds: {minLat:number,minLon:number,maxLat:number,maxLon:number}|null,
+ *   features: {
+ *     hasDisplayColor: boolean,
+ *     hasRoutingMeta: boolean,
+ *     hasThirdPartyExt: boolean,
+ *     hasExistingTrack: boolean,
+ *     hasShapingPts: boolean,
+ *     routeOnly: boolean,
+ *   },
  * }}
  */
 export function summarizeInput(gpxString, options = {}) {
@@ -229,15 +306,15 @@ export function summarizeInput(gpxString, options = {}) {
   const gpx = doc.documentElement;
   if (!gpx || gpx.localName !== 'gpx') throw new Error('Root element is not <gpx>');
 
-  const routes    = gpx.getElementsByTagNameNS(GPX_NS, 'rte').length;
-  const rtepts    = gpx.getElementsByTagNameNS(GPX_NS, 'rtept').length;
+  const routes    = gpx.getElementsByTagNameNS(GPX_NS,  'rte').length;
+  const rtepts    = gpx.getElementsByTagNameNS(GPX_NS,  'rtept').length;
   const rpts      = gpx.getElementsByTagNameNS(GPXX_NS, 'rpt').length;
-  const waypoints = gpx.getElementsByTagNameNS(GPX_NS, 'wpt').length;
-  const tracks    = gpx.getElementsByTagNameNS(GPX_NS, 'trk').length;
-  const trkpts    = gpx.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
+  const waypoints = gpx.getElementsByTagNameNS(GPX_NS,  'wpt').length;
+  const tracks    = gpx.getElementsByTagNameNS(GPX_NS,  'trk').length;
+  const trkpts    = gpx.getElementsByTagNameNS(GPX_NS,  'trkpt').length;
 
   let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-  const scan = (list) => {
+  const scanCoords = (list) => {
     for (const el of list) {
       const lat = parseFloat(el.getAttribute('lat'));
       const lon = parseFloat(el.getAttribute('lon'));
@@ -248,13 +325,22 @@ export function summarizeInput(gpxString, options = {}) {
       if (lon > maxLon) maxLon = lon;
     }
   };
-  scan(gpx.getElementsByTagNameNS(GPX_NS, 'wpt'));
-  scan(gpx.getElementsByTagNameNS(GPX_NS, 'rtept'));
-  scan(gpx.getElementsByTagNameNS(GPXX_NS, 'rpt'));
-  scan(gpx.getElementsByTagNameNS(GPX_NS, 'trkpt'));
+  scanCoords(gpx.getElementsByTagNameNS(GPX_NS,  'wpt'));
+  scanCoords(gpx.getElementsByTagNameNS(GPX_NS,  'rtept'));
+  scanCoords(gpx.getElementsByTagNameNS(GPXX_NS, 'rpt'));
+  scanCoords(gpx.getElementsByTagNameNS(GPX_NS,  'trkpt'));
   const bounds = minLat === Infinity ? null : { minLat, minLon, maxLat, maxLon };
 
-  return { routes, rtepts, rpts, waypoints, tracks, trkpts, bounds };
+  const features = {
+    hasDisplayColor:  gpx.getElementsByTagNameNS(GPXX_NS, 'DisplayColor').length > 0,
+    hasRoutingMeta:   gpx.getElementsByTagNameNS(TRP_NS,  '*').length > 0,
+    hasThirdPartyExt: hasThirdPartyExtension(gpx),
+    hasExistingTrack: tracks > 0,
+    hasShapingPts:    rpts > 0,
+    routeOnly:        routes === 0,
+  };
+
+  return { routes, rtepts, rpts, waypoints, tracks, trkpts, bounds, features };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +389,6 @@ function hasAnyNamedField(el) {
 }
 
 function formatCoord(n) {
-  // GPX coords commonly carry 6–7 decimals. Strip trailing zeros.
   if (!Number.isFinite(n)) return String(n);
   return n.toFixed(7).replace(/\.?0+$/, '');
 }
@@ -319,20 +404,119 @@ function buildWaypointFromRtept(doc, p) {
 }
 
 function readRouteDisplayColor(rte) {
-  const ext = firstChildElNS(rte, GPX_NS, 'extensions');
+  const ext  = firstChildElNS(rte, GPX_NS, 'extensions');
   const rext = firstChildElNS(ext, GPXX_NS, 'RouteExtension');
-  const dc = firstChildElNS(rext, GPXX_NS, 'DisplayColor');
+  const dc   = firstChildElNS(rext, GPXX_NS, 'DisplayColor');
   return dc ? dc.textContent : null;
 }
 
 function buildColorExtensions(doc, localName, color) {
   const wrap = doc.createElementNS(GPX_NS, 'extensions');
-  const ext = doc.createElementNS(GPXX_NS, 'gpxx:' + localName);
-  const dc = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
+  const ext  = doc.createElementNS(GPXX_NS, 'gpxx:' + localName);
+  const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
   dc.textContent = color;
   ext.appendChild(dc);
   wrap.appendChild(ext);
   return wrap;
+}
+
+/**
+ * Copy direct children of srcEl's <extensions> that match `childNS` into
+ * dstEl's <extensions> (creating the wrapper if absent).
+ */
+function copyNsChildren(srcEl, dstEl, doc, wrapNS, childNS) {
+  const srcExt = firstChildElNS(srcEl, wrapNS, 'extensions');
+  if (!srcExt) return;
+  const toAdd = [];
+  for (let c = srcExt.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 1 && c.namespaceURI === childNS) toAdd.push(c);
+  }
+  if (!toAdd.length) return;
+  let dstExt = firstChildElNS(dstEl, wrapNS, 'extensions');
+  if (!dstExt) {
+    dstExt = doc.createElementNS(wrapNS, 'extensions');
+    dstEl.appendChild(dstExt);
+  }
+  for (const el of toAdd) dstExt.appendChild(el.cloneNode(true));
+}
+
+/**
+ * Collect clones of direct children of el's <extensions> that match `childNS`
+ * into an output array (used to build route-level extensions before attaching).
+ */
+function collectNsChildren(el, wrapNS, childNS, out) {
+  const ext = firstChildElNS(el, wrapNS, 'extensions');
+  if (!ext) return;
+  for (let c = ext.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 1 && c.namespaceURI === childNS) out.push(c.cloneNode(true));
+  }
+}
+
+/**
+ * Collect clones of direct children of el's <extensions> whose namespace is
+ * not in KNOWN_NAMESPACES (third-party elements).
+ */
+function collectThirdPartyChildren(el, wrapNS, out) {
+  const ext = firstChildElNS(el, wrapNS, 'extensions');
+  if (!ext) return;
+  for (let c = ext.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 1 && c.namespaceURI && !KNOWN_NAMESPACES.has(c.namespaceURI)) {
+      out.push(c.cloneNode(true));
+    }
+  }
+}
+
+/**
+ * Auto-convert wpt extension data to core GPX 1.1 fields before stripping:
+ *   gpxx:Address / wptx1:Address → <desc> if absent
+ *   ctx:CreationTime → <wpt><time> if absent
+ */
+function convertWptExtensionData(wpt, doc) {
+  const ext = firstChildElNS(wpt, GPX_NS, 'extensions');
+  if (!ext) return;
+
+  // Address → desc
+  const gpxxWptExt  = firstChildElNS(ext, GPXX_NS,  'WaypointExtension');
+  const wptx1WptExt = firstChildElNS(ext, WPTX1_NS, 'WaypointExtension');
+  const wptExt = gpxxWptExt || wptx1WptExt;
+  if (wptExt) {
+    const extNS   = gpxxWptExt ? GPXX_NS : WPTX1_NS;
+    const addrEl  = firstChildElNS(wptExt, extNS, 'Address');
+    if (addrEl) {
+      const street  = firstChildText(addrEl, extNS, 'StreetAddress');
+      const city    = firstChildText(addrEl, extNS, 'City');
+      const zip     = firstChildText(addrEl, extNS, 'PostalCode');
+      const country = firstChildText(addrEl, extNS, 'Country');
+      const parts   = [];
+      if (street) parts.push(street);
+      if (city && zip)   parts.push(city + ' ' + zip);
+      else if (city)     parts.push(city);
+      else if (zip)      parts.push(zip);
+      if (country) parts.push(country);
+      const phoneEl = firstChildElNS(wptExt, extNS, 'PhoneNumber');
+      if (phoneEl && phoneEl.textContent.trim()) parts.push(phoneEl.textContent.trim());
+
+      if (parts.length) {
+        const descEl = firstChildElNS(wpt, GPX_NS, 'desc');
+        if (!descEl || !descEl.textContent.trim()) {
+          if (descEl) {
+            descEl.textContent = parts.join(', ');
+          } else {
+            wpt.insertBefore(textEl(doc, GPX_NS, 'desc', parts.join(', ')), ext);
+          }
+        }
+      }
+    }
+  }
+
+  // ctx:CreationTime → <time> if absent
+  const ctxExt = firstChildElNS(ext, CTX_NS, 'CreationTimeExtension');
+  if (ctxExt) {
+    const ctTime = firstChildText(ctxExt, CTX_NS, 'CreationTime');
+    if (ctTime && !firstChildElNS(wpt, GPX_NS, 'time')) {
+      wpt.insertBefore(textEl(doc, GPX_NS, 'time', ctTime), wpt.firstChild);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +549,27 @@ function stripGpxxExcept(root, allowedLocalNames) {
   for (const el of victims) if (el.parentNode) el.parentNode.removeChild(el);
 }
 
+function stripNamespace(root, ns) {
+  const list = Array.from(root.getElementsByTagNameNS(ns, '*'));
+  for (const el of list) if (el.parentNode) el.parentNode.removeChild(el);
+}
+
+function stripThirdPartyExtensions(root) {
+  const victims = [];
+  walkElements(root, (el) => {
+    if (el.namespaceURI && !KNOWN_NAMESPACES.has(el.namespaceURI)) victims.push(el);
+  });
+  for (const el of victims) if (el.parentNode) el.parentNode.removeChild(el);
+}
+
+function hasThirdPartyExtension(root) {
+  let found = false;
+  walkElements(root, (el) => {
+    if (!found && el.namespaceURI && !KNOWN_NAMESPACES.has(el.namespaceURI)) found = true;
+  });
+  return found;
+}
+
 function removeElementsByNS(root, ns, localName) {
   const list = Array.from(root.getElementsByTagNameNS(ns, localName));
   for (const el of list) if (el.parentNode) el.parentNode.removeChild(el);
@@ -388,15 +593,12 @@ function removeEmptyExtensions(root) {
 // Schema-ordered child insertion
 
 function insertInOrder(gpx, newWpts, newRtes, newTrks) {
-  // Gather existing children by role.
-  const existingWpts = childrenByNS(gpx, GPX_NS, 'wpt');
-  // Appending: original wpts first, then new (route-derived) wpts.
-  for (const w of newWpts) gpx.appendChild(w); // may be out of order; reorder below
+  for (const w of newWpts) gpx.appendChild(w);
   for (const r of newRtes) gpx.appendChild(r);
   for (const t of newTrks) gpx.appendChild(t);
 
-  // Now reorder all children under gpx to the canonical schema sequence:
-  //   metadata, wpt*, rte*, trk*, extensions
+  // Reorder all children into the canonical GPX 1.1 schema sequence:
+  //   metadata, wpt*, rte*, trk*, extensions*
   const buckets = { metadata: [], wpt: [], rte: [], trk: [], extensions: [], other: [] };
   const kids = Array.from(gpx.childNodes);
   for (const k of kids) {
@@ -411,8 +613,6 @@ function insertInOrder(gpx, newWpts, newRtes, newTrks) {
   for (const t of buckets.trk)        gpx.appendChild(t);
   for (const o of buckets.other)      gpx.appendChild(o);
   for (const e of buckets.extensions) gpx.appendChild(e);
-  // Silence linter: existingWpts was read for documentation only.
-  void existingWpts;
 }
 
 function refreshMetadataTime(gpx, doc) {
@@ -430,25 +630,26 @@ function refreshMetadataTime(gpx, doc) {
 }
 
 function scrubNamespaceDeclarations(gpx) {
-  // Does anything in the tree actually live in the gpxx namespace?
-  let usesGpxx = false;
-  walkElements(gpx, (el) => { if (el.namespaceURI === GPXX_NS) usesGpxx = true; });
+  // Collect all namespace URIs actually used in the output tree.
+  const usedNS = new Set();
+  walkElements(gpx, (el) => { if (el.namespaceURI) usedNS.add(el.namespaceURI); });
 
   // Ensure default namespace.
   gpx.setAttribute('xmlns', GPX_NS);
 
-  // Manage xmlns:gpxx.
-  if (usesGpxx) gpx.setAttribute('xmlns:gpxx', GPXX_NS);
+  // Ensure xmlns:gpxx is present/absent based on usage
+  // (buildColorExtensions uses createElementNS so we always need an explicit declaration).
+  if (usedNS.has(GPXX_NS)) gpx.setAttribute('xmlns:gpxx', GPXX_NS);
   else if (gpx.hasAttribute('xmlns:gpxx')) gpx.removeAttribute('xmlns:gpxx');
 
-  // Drop any other xmlns:* declarations inherited from the input.
+  // For all other xmlns:* declarations: keep only those whose namespace is used.
   const attrs = Array.from(gpx.attributes);
   for (const a of attrs) {
     if (!a.name.startsWith('xmlns:')) continue;
     const prefix = a.name.slice(6);
-    if (prefix === 'gpxx' && usesGpxx) continue;
-    if (prefix === 'xsi') continue; // revisited below
-    gpx.removeAttributeNode(a);
+    if (prefix === 'gpxx') continue; // handled above
+    if (prefix === 'xsi')  continue; // handled below
+    if (!usedNS.has(a.value)) gpx.removeAttributeNode(a);
   }
 
   // schemaLocation: keep only tokens whose namespace is still referenced.
@@ -456,11 +657,9 @@ function scrubNamespaceDeclarations(gpx) {
                  || gpx.getAttribute('xsi:schemaLocation');
   if (schemaLoc) {
     const toks = schemaLoc.trim().split(/\s+/);
-    const inUse = new Set([GPX_NS]);
-    if (usesGpxx) inUse.add(GPXX_NS);
     const kept = [];
     for (let i = 0; i + 1 < toks.length; i += 2) {
-      if (inUse.has(toks[i])) kept.push(toks[i], toks[i + 1]);
+      if (usedNS.has(toks[i])) kept.push(toks[i], toks[i + 1]);
     }
     if (kept.length) {
       gpx.setAttribute('xsi:schemaLocation', kept.join(' '));
@@ -503,7 +702,7 @@ export function rdpWithAnchors(points, toleranceM) {
 
   const anchorIdx = [];
   for (let i = 0; i < points.length; i++) if (points[i].anchor) anchorIdx.push(i);
-  if (anchorIdx[0] !== 0)                     anchorIdx.unshift(0);
+  if (anchorIdx[0] !== 0)                         anchorIdx.unshift(0);
   if (anchorIdx[anchorIdx.length - 1] !== points.length - 1) anchorIdx.push(points.length - 1);
   for (const i of anchorIdx) keep[i] = true;
 
