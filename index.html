@@ -7,14 +7,23 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main>
-    <header class="app-header">
-      <h1>gpxtotrack</h1>
-      <p class="tagline">Convert Garmin route files to clean GPX&nbsp;1.1 that works on any device.</p>
-      <p class="privacy-note">&#128274; Processed locally &mdash; files never leave your browser.</p>
-    </header>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <div>
+        <h1>gpxtotrack</h1>
+        <p class="tagline">Convert Garmin route files to clean GPX&nbsp;1.1 for any device.</p>
+      </div>
+      <p class="privacy-badge">&#128274; Files never leave your browser</p>
+    </div>
+  </header>
 
+  <main>
     <section id="drop" class="drop-zone">
+      <svg class="drop-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
       <p class="drop-msg">Drop GPX files here</p>
       <p class="drop-or">or</p>
       <label class="file-button">
@@ -25,7 +34,7 @@
 
     <section id="controls" hidden>
       <label class="control-row">
-        <span class="control-label">Route simplification</span>
+        <span class="control-label">Tolerance</span>
         <input type="range" id="tolerance" min="0" max="7" step="1" value="0" list="toleranceTicks">
         <datalist id="toleranceTicks">
           <option value="0"></option><option value="1"></option>
@@ -40,23 +49,23 @@
         Add route points to the waypoint list
       </label>
 
-      <fieldset id="colorOption" hidden>
+      <fieldset id="colorOption">
         <legend>Route color</legend>
         <p class="hint">GPX&nbsp;1.1 has no color field; keeping it requires a Garmin extension.</p>
         <label><input type="radio" name="displayColor" value="keep" checked> Keep (Garmin extension)</label>
         <label><input type="radio" name="displayColor" value="remove"> Remove</label>
       </fieldset>
 
-      <fieldset id="routingMetaOption" hidden>
+      <fieldset id="routingMetaOption">
         <legend>Waypoint type markers</legend>
         <p class="hint">Garmin marks points as via-points or shaping points. Only useful on Garmin devices; no GPX&nbsp;1.1 equivalent.</p>
         <label><input type="radio" name="routingMeta" value="keep"> Keep (Garmin extension)</label>
         <label><input type="radio" name="routingMeta" value="remove" checked> Remove</label>
       </fieldset>
 
-      <fieldset id="thirdPartyExtOption" hidden>
+      <fieldset id="thirdPartyExtOption">
         <legend>Third-party extensions</legend>
-        <p class="hint">Extensions from other tools (e.g.&nbsp;Rümo routing profile). Cannot be expressed in GPX&nbsp;1.1.</p>
+        <p class="hint">Extensions from other tools (e.g.&nbsp;R&uuml;mo routing profile). Cannot be expressed in GPX&nbsp;1.1.</p>
         <label><input type="radio" name="thirdPartyExt" value="keep"> Keep</label>
         <label><input type="radio" name="thirdPartyExt" value="remove" checked> Remove</label>
       </fieldset>
@@ -70,11 +79,11 @@
       <h2 class="section-error-heading">Errors</h2>
       <ul id="errorList"></ul>
     </section>
-
-    <footer>
-      <a href="https://github.com/c0dev0id/gpxtotrack">Source on GitHub</a>
-    </footer>
   </main>
+
+  <footer>
+    <a href="https://github.com/c0dev0id/gpxtotrack">Source on GitHub</a>
+  </footer>
 
   <script type="module" src="app.js"></script>
 </body>

@@ -17,13 +17,8 @@ const errorList    = document.getElementById('errorList');
 // In-memory state for every file currently on screen.
 const cards = [];
 
-// Union of feature flags across all currently loaded files.
-let unifiedFeatures = {
-  hasDisplayColor:  false,
-  hasRoutingMeta:   false,
-  hasThirdPartyExt: false,
-  anyRouteOrTrack:  false,  // true if any file has routes or existing tracks
-};
+// True if any currently loaded file has routes or existing tracks.
+let anyRouteOrTrack = false;
 
 tolerance.value = String(DEFAULT_INDEX);
 updateToleranceLabel();
@@ -88,14 +83,8 @@ function updateDropZone() {
 }
 
 function updateControlVisibility() {
-  document.getElementById('colorOption').hidden       = !unifiedFeatures.hasDisplayColor;
-  document.getElementById('routingMetaOption').hidden = !unifiedFeatures.hasRoutingMeta;
-  document.getElementById('thirdPartyExtOption').hidden = !unifiedFeatures.hasThirdPartyExt;
-
-  // Hide the entire controls section for pure wpt-only files with no option-gated features.
-  const isPureWptOnly = !unifiedFeatures.anyRouteOrTrack;
-  const hasAnyOption  = unifiedFeatures.hasDisplayColor || unifiedFeatures.hasRoutingMeta || unifiedFeatures.hasThirdPartyExt;
-  controlsSec.hidden = cards.length === 0 || (isPureWptOnly && !hasAnyOption);
+  // Show all controls or none — never a partial mix.
+  controlsSec.hidden = cards.length === 0 || !anyRouteOrTrack;
 }
 
 async function handleFiles(files) {
@@ -125,14 +114,8 @@ async function handleFile(file) {
     return;
   }
 
-  // Accumulate feature flags from this file into the union.
   const f = inputSummary.features;
-  if (f) {
-    if (f.hasDisplayColor)  unifiedFeatures.hasDisplayColor  = true;
-    if (f.hasRoutingMeta)   unifiedFeatures.hasRoutingMeta   = true;
-    if (f.hasThirdPartyExt) unifiedFeatures.hasThirdPartyExt = true;
-    if (!f.routeOnly || f.hasExistingTrack) unifiedFeatures.anyRouteOrTrack = true;
-  }
+  if (f && (!f.routeOnly || f.hasExistingTrack)) anyRouteOrTrack = true;
 
   const entry = {
     file,
@@ -291,12 +274,7 @@ function renderError(file, err) {
 function clearAll() {
   for (const c of cards) c.cardEl.remove();
   cards.length = 0;
-  unifiedFeatures = {
-    hasDisplayColor:  false,
-    hasRoutingMeta:   false,
-    hasThirdPartyExt: false,
-    anyRouteOrTrack:  false,
-  };
+  anyRouteOrTrack = false;
   resultList.innerHTML = '';
   errorList.innerHTML  = '';
   resultsSec.hidden  = true;
