@@ -200,6 +200,63 @@ export function convert(gpxString, options = {}) {
   return { gpx: out, stats };
 }
 
+/**
+ * Compute a lightweight summary of the input GPX without performing any
+ * conversion. Used by the UI to show "what's in this file" before the user
+ * commits to converting.
+ *
+ * @param {string} gpxString
+ * @param {object} [options]
+ * @param {DOMParser} [options.DOMParserImpl]
+ * @returns {{
+ *   routes: number,
+ *   rtepts: number,
+ *   rpts: number,
+ *   waypoints: number,
+ *   tracks: number,
+ *   trkpts: number,
+ *   bounds: {minLat:number,minLon:number,maxLat:number,maxLon:number}|null,
+ * }}
+ */
+export function summarizeInput(gpxString, options = {}) {
+  const Parser = options.DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);
+  if (!Parser) throw new Error('DOMParser not available in this environment');
+
+  const doc = new Parser().parseFromString(gpxString, 'application/xml');
+  const parseErr = doc.getElementsByTagName('parsererror')[0];
+  if (parseErr) throw new Error('Failed to parse GPX: ' + parseErr.textContent.trim());
+
+  const gpx = doc.documentElement;
+  if (!gpx || gpx.localName !== 'gpx') throw new Error('Root element is not <gpx>');
+
+  const routes    = gpx.getElementsByTagNameNS(GPX_NS, 'rte').length;
+  const rtepts    = gpx.getElementsByTagNameNS(GPX_NS, 'rtept').length;
+  const rpts      = gpx.getElementsByTagNameNS(GPXX_NS, 'rpt').length;
+  const waypoints = gpx.getElementsByTagNameNS(GPX_NS, 'wpt').length;
+  const tracks    = gpx.getElementsByTagNameNS(GPX_NS, 'trk').length;
+  const trkpts    = gpx.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
+
+  let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
+  const scan = (list) => {
+    for (const el of list) {
+      const lat = parseFloat(el.getAttribute('lat'));
+      const lon = parseFloat(el.getAttribute('lon'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+    }
+  };
+  scan(gpx.getElementsByTagNameNS(GPX_NS, 'wpt'));
+  scan(gpx.getElementsByTagNameNS(GPX_NS, 'rtept'));
+  scan(gpx.getElementsByTagNameNS(GPXX_NS, 'rpt'));
+  scan(gpx.getElementsByTagNameNS(GPX_NS, 'trkpt'));
+  const bounds = minLat === Infinity ? null : { minLat, minLon, maxLat, maxLon };
+
+  return { routes, rtepts, rpts, waypoints, tracks, trkpts, bounds };
+}
+
 // ---------------------------------------------------------------------------
 // DOM helpers
 

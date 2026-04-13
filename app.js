@@ -1,16 +1,27 @@
-import { convert } from './gpxtotrack.js';
+import { convert, summarizeInput } from './gpxtotrack.js';
 
-const fileInput  = document.getElementById('file');
-const dropZone   = document.getElementById('drop');
-const tolerance  = document.getElementById('tolerance');
+const TOLERANCE_STOPS_M = [10, 20, 50, 100, 250, 500, 750, 1000];
+const DEFAULT_INDEX = 0;
+
+const fileInput    = document.getElementById('file');
+const dropZone     = document.getElementById('drop');
+const tolerance    = document.getElementById('tolerance');
 const toleranceOut = document.getElementById('toleranceOut');
-const keepWpts   = document.getElementById('keepRteptWaypoints');
-const resultsSec = document.getElementById('results');
-const resultList = document.getElementById('resultList');
-const errorsSec  = document.getElementById('errors');
-const errorList  = document.getElementById('errorList');
+const keepWpts     = document.getElementById('keepRteptWaypoints');
+const controlsSec  = document.getElementById('controls');
+const resultsSec   = document.getElementById('results');
+const resultList   = document.getElementById('resultList');
+const errorsSec    = document.getElementById('errors');
+const errorList    = document.getElementById('errorList');
 
-tolerance.addEventListener('input', () => { toleranceOut.textContent = tolerance.value + ' m'; });
+// In-memory state for every file currently on screen.
+const cards = [];
+
+tolerance.value = String(DEFAULT_INDEX);
+updateToleranceLabel();
+
+tolerance.addEventListener('input', onOptionsChanged);
+keepWpts.addEventListener('change', onOptionsChanged);
 
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
@@ -26,57 +37,182 @@ dropZone.addEventListener('drop', (e) => {
   if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files);
 });
 
-async function handleFiles(files) {
-  clearResults();
-  for (const f of files) await handleFile(f);
+function currentOptions() {
+  return {
+    toleranceM: TOLERANCE_STOPS_M[parseInt(tolerance.value, 10)] ?? TOLERANCE_STOPS_M[DEFAULT_INDEX],
+    keepRteptWaypoints: keepWpts.checked,
+  };
 }
 
-async function handleFile(file) {
-  try {
-    const text = await file.text();
-    const opts = {
-      toleranceM: parseInt(tolerance.value, 10),
-      keepRteptWaypoints: keepWpts.checked,
-    };
-    const { gpx, stats } = convert(text, opts);
-    renderSuccess(file, gpx, stats);
-  } catch (err) {
-    renderError(file, err);
+function formatTolerance(m) {
+  return m >= 1000 ? (m / 1000) + ' km' : m + ' m';
+}
+
+function updateToleranceLabel() {
+  toleranceOut.textContent = formatTolerance(currentOptions().toleranceM);
+}
+
+function onOptionsChanged() {
+  updateToleranceLabel();
+  for (const entry of cards) recomputePreview(entry);
+}
+
+async function handleFiles(files) {
+  clearAll();
+  for (const f of files) await handleFile(f);
+  if (cards.length || errorList.childElementCount) {
+    controlsSec.hidden = cards.length === 0;
+    resultsSec.hidden  = cards.length === 0;
   }
 }
 
-function renderSuccess(file, gpxString, stats) {
-  resultsSec.hidden = false;
+async function handleFile(file) {
+  let sourceText;
+  try {
+    sourceText = await file.text();
+  } catch (err) {
+    renderError(file, err);
+    return;
+  }
+
+  let inputSummary;
+  try {
+    inputSummary = summarizeInput(sourceText);
+  } catch (err) {
+    renderError(file, err);
+    return;
+  }
+
+  const entry = {
+    file,
+    sourceText,
+    inputSummary,
+    lastPreview: null,      // { gpx, stats }
+    lastPreviewError: null, // string
+    cardEl: null,
+    outputEl: null,
+    convertBtn: null,
+  };
+  renderCard(entry);
+  cards.push(entry);
+  recomputePreview(entry);
+}
+
+function recomputePreview(entry) {
+  try {
+    entry.lastPreview = convert(entry.sourceText, currentOptions());
+    entry.lastPreviewError = null;
+  } catch (err) {
+    entry.lastPreview = null;
+    entry.lastPreviewError = err.message || String(err);
+  }
+  paintOutput(entry);
+}
+
+function renderCard(entry) {
   const li = document.createElement('li');
-
-  const blob = new Blob([gpxString], { type: 'application/gpx+xml' });
-  const url  = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = trackFilename(file.name);
-  a.textContent = 'Download ' + a.download;
-  a.className = 'download';
-
-  const s = document.createElement('div');
-  s.className = 'stats';
-  s.innerHTML =
-    '<span>' + stats.routes + ' route' + (stats.routes === 1 ? '' : 's') + '</span>' +
-    '<span>' + stats.inputRtepts + ' → ' + stats.outputRtepts + ' route points</span>' +
-    '<span>' + stats.inputRpts + ' shaping points expanded</span>' +
-    '<span>' + stats.outputTrkpts + ' track points</span>' +
-    '<span>' + stats.outputWaypoints + ' waypoints</span>' +
-    (stats.bounds
-      ? '<span>bbox ' + fmtCoord(stats.bounds.minLat) + ',' + fmtCoord(stats.bounds.minLon)
-        + ' → ' + fmtCoord(stats.bounds.maxLat) + ',' + fmtCoord(stats.bounds.maxLon) + '</span>'
-      : '');
+  li.className = 'card';
 
   const head = document.createElement('div');
   head.className = 'file';
-  head.textContent = file.name;
+  head.textContent = entry.file.name;
+  li.appendChild(head);
 
-  li.append(head, a, s);
+  const grid = document.createElement('div');
+  grid.className = 'summary-grid';
+
+  const inCol = document.createElement('div');
+  inCol.className = 'summary';
+  inCol.innerHTML = '<h3>Input</h3>' + inputSummaryHtml(entry.inputSummary);
+  grid.appendChild(inCol);
+
+  const outCol = document.createElement('div');
+  outCol.className = 'summary';
+  outCol.innerHTML = '<h3>Output (preview)</h3><div class="stats">&hellip;</div>';
+  grid.appendChild(outCol);
+
+  li.appendChild(grid);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'convert';
+  btn.textContent = 'Convert';
+  btn.addEventListener('click', () => onConvert(entry));
+  li.appendChild(btn);
+
+  entry.cardEl = li;
+  entry.outputEl = outCol.querySelector('.stats');
+  entry.convertBtn = btn;
   resultList.appendChild(li);
+}
+
+function paintOutput(entry) {
+  if (!entry.outputEl) return;
+  if (entry.lastPreviewError) {
+    entry.outputEl.innerHTML = '<span class="err">' + escape(entry.lastPreviewError) + '</span>';
+    entry.convertBtn.disabled = true;
+    return;
+  }
+  const s = entry.lastPreview.stats;
+  entry.outputEl.innerHTML = outputSummaryHtml(s, entry.inputSummary);
+  entry.convertBtn.disabled = false;
+}
+
+function inputSummaryHtml(s) {
+  return '<ul class="stats">' +
+    row(count(s.routes, 'route', 'routes')) +
+    row(count(s.rtepts, 'route point', 'route points')) +
+    row(count(s.rpts, 'shaping point', 'shaping points')) +
+    row(count(s.waypoints, 'waypoint', 'waypoints')) +
+    (s.tracks ? row(count(s.tracks, 'existing track', 'existing tracks') + ' (' + s.trkpts + ' points)') : '') +
+    (s.bounds ? row(bboxStr(s.bounds)) : '') +
+    '</ul>';
+}
+
+function outputSummaryHtml(s, input) {
+  return '<ul class="stats">' +
+    row(count(s.routes, 'route', 'routes')) +
+    row(input.rtepts + ' → ' + s.outputRtepts + ' route points') +
+    row(s.outputTrkpts + ' track points') +
+    row(count(s.outputWaypoints, 'waypoint', 'waypoints')) +
+    (s.bounds ? row(bboxStr(s.bounds)) : '') +
+    '</ul>';
+}
+
+function row(text) { return '<li>' + escape(text) + '</li>'; }
+
+function count(n, singular, plural) {
+  return n + ' ' + (n === 1 ? singular : plural);
+}
+
+function bboxStr(b) {
+  return 'bbox ' + fmtCoord(b.minLat) + ',' + fmtCoord(b.minLon)
+       + ' → ' + fmtCoord(b.maxLat) + ',' + fmtCoord(b.maxLon);
+}
+
+function onConvert(entry) {
+  // If options changed since last preview, recompute first (defensive).
+  if (!entry.lastPreview) recomputePreview(entry);
+  if (!entry.lastPreview) return; // error path
+
+  const gpxString = entry.lastPreview.gpx;
+  const blob = new Blob([gpxString], { type: 'application/gpx+xml' });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = normalizedFilename(entry.file.name);
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 0);
+}
+
+function normalizedFilename(name) {
+  const m = name.match(/^(.*?)(\.gpx)?$/i);
+  return (m ? m[1] : name) + '- normalized.gpx';
 }
 
 function renderError(file, err) {
@@ -86,16 +222,14 @@ function renderError(file, err) {
   errorList.appendChild(li);
 }
 
-function clearResults() {
+function clearAll() {
+  for (const c of cards) c.cardEl.remove();
+  cards.length = 0;
   resultList.innerHTML = '';
   errorList.innerHTML = '';
   resultsSec.hidden = true;
   errorsSec.hidden = true;
-}
-
-function trackFilename(name) {
-  const m = name.match(/^(.*?)(\.gpx)?$/i);
-  return (m ? m[1] : name) + '-track.gpx';
+  controlsSec.hidden = true;
 }
 
 function fmtCoord(n) { return n.toFixed(5); }

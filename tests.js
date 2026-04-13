@@ -186,4 +186,29 @@ export const tests = [
     log('rejects input with no <rte>', threw);
   },
 
+  async function summarizeInput_basecamp({ log, summarizeInput, loadFixture }) {
+    const src = await loadFixture('basecamp-route.gpx');
+    const s = summarizeInput(src);
+    log('summarizeInput basecamp: 1 route',       s.routes === 1,    'got ' + s.routes);
+    log('summarizeInput basecamp: 3 rtepts',      s.rtepts === 3,    'got ' + s.rtepts);
+    log('summarizeInput basecamp: 5 rpts',        s.rpts === 5,      'got ' + s.rpts);
+    log('summarizeInput basecamp: 0 waypoints',   s.waypoints === 0, 'got ' + s.waypoints);
+    log('summarizeInput basecamp: 0 tracks',      s.tracks === 0,    'got ' + s.tracks);
+    log('summarizeInput basecamp: bounds present', !!s.bounds);
+  },
+
+  async function summarizeInput_mixed_counts_existing_tracks({ log, summarizeInput, loadFixture }) {
+    const src = await loadFixture('mixed.gpx');
+    const s = summarizeInput(src);
+    log('summarizeInput mixed: 1 route',          s.routes === 1,   'got ' + s.routes);
+    log('summarizeInput mixed: 1 existing track', s.tracks === 1,   'got ' + s.tracks);
+    log('summarizeInput mixed: trkpts > 0',       s.trkpts > 0,     'got ' + s.trkpts);
+  },
+
+  async function summarizeInput_rejects_non_gpx({ log, summarizeInput }) {
+    let threw = false;
+    try { summarizeInput('<notgpx/>'); } catch (e) { threw = true; }
+    log('summarizeInput rejects non-<gpx> root', threw);
+  },
+
 ];
