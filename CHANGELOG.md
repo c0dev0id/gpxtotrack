@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Redesigned site header**: Full-width dark slate header with monospace app name, replacing the
+  plain-text-on-gray treatment. Page footer also moved outside the content column.
+- **Upload icon in drop zone**: SVG upload arrow displayed when no files are loaded; hidden in the
+  compact post-load state.
+
+### Changed
+- **Controls panel shows all options or none**: Previously, the color / waypoint-type / third-party
+  fieldsets were conditionally shown based on whether the loaded file contained those features,
+  while the tolerance slider was always shown — a confusing mix. Now all options are always visible
+  when the controls panel is shown.
+- **Renamed "Route simplification" to "Tolerance"**: The previous label was misleading for files
+  with shaping points, where the tool first densifies the route before simplifying. "Tolerance" is
+  the neutral, accurate name for the RDP parameter.
+- Controls panel remains hidden for waypoint-only files (no routes or tracks to configure).
+
+### Added
 - **Extension-aware conversion options**: `displayColor`, `routingMeta`, `thirdPartyExt` on `convert()`.
   Defaults: keep color, remove routing meta, remove third-party extensions.
 - **UI option controls**: Three conditional fieldsets appear in the controls panel only when the
