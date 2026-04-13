@@ -4,27 +4,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project intent
 
-`gpxtotrack` is a converter that takes Garmin GPX route files and produces GPX track files. Per the README:
+`gpxtotrack` takes a Garmin GPX route file and produces an enriched GPX containing:
 
-- It must be a **pure JavaScript** tool (client-side only — no server, no build step required for runtime).
-- It is **hosted on GitHub Pages**, so the default branch must be servable as a static site (typically `index.html` + JS at the repo root, or under `/docs`).
-- It must support Garmin's **route point extension** (`<gpxx:RoutePointExtension>` inside `<rtept>`) as well as other common Garmin extensions — these carry the intermediate shaping points that turn a sparse route into a dense track.
+- a clean GPX 1.1 `<rte>` with a sensible number of extra `<rtept>` elements promoted from `gpxx:RoutePointExtension/<rpt>` so the shape survives without needing a Garmin extension,
+- a dense GPX 1.1 `<trk>` built by flattening every rtept + rpt in order,
+- the `<wpt>` list (preserved; optionally augmented with labeled rtepts via a UI toggle).
 
-## Current state
+Constraints:
 
-The repository is effectively empty: only `README.md` exists on the default branch. There is no source code, no `package.json`, no tests, and no build tooling yet. Any "how to build/test/run" instructions would be fabricated — do not invent them. When adding the first implementation:
+- **Pure client-side JavaScript.** No server, no build step, no runtime deps. Served as-is from GitHub Pages.
+- **Generic GPX 1.1 storage.** A Garmin extension is retained only when GPX 1.1 cannot express the feature. In practice that is just `gpxx:RouteExtension/DisplayColor` on `<rte>` and `gpxx:TrackExtension/DisplayColor` on `<trk>` (color has no GPX 1.1 equivalent). Waypoint icon/color is encoded in core `<sym>` per Garmin's symbol-name convention (e.g. `"Flag, Blue"`). Everything else Garmin (`gpxtpx`, `gpxtrkx`, `gpxpx`, `gpxacc`, `gpxwptx1`, `gpxx:WaypointExtension`, `gpxx:RoutePointExtension`, `gpxx:RouteExtension/IsAutoNamed`) is stripped from output.
 
-- Prefer a zero-build static site (plain `.html` + `.js`) so GitHub Pages can serve it directly. Only introduce a bundler if a concrete need forces it.
-- Keep the conversion logic as a pure function over the parsed GPX DOM so it can be unit-tested independently of the page UI.
+## Project layout
 
-## GPX conversion domain notes
+- `index.html`, `app.js`, `style.css` — the static UI. ES module, no bundler.
+- `gpxtotrack.js` — the conversion library. Exports `convert(gpxString, options)` as a pure function returning `{ gpx: string, stats: object }`. No DOM side effects — safe to import in tests or any DOM-capable environment. Also exports `rdpWithAnchors` for unit testing the simplifier.
+- `test.html`, `test.js`, `tests.js` — in-browser test harness. `tests.js` holds the test definitions; `test.js` is the browser glue.
+- `run-tests.mjs` — headless runner (Playwright → Chromium) that drives `test.html` and exits non-zero on failure.
+- `e2e-check.mjs` — end-to-end smoke test: drives the real UI at `index.html`, converts each fixture, validates output with `xmllint`.
+- `fixtures/*.gpx` — test inputs (minimal, BaseCamp-style, colored, with-waypoints, mixed rte+trk).
 
-When implementing the converter, the core transformation is:
+## Running and testing
 
-- Input: a `<rte>` containing `<rtept>` elements. Each `<rtept>` may contain a Garmin `<extensions><gpxx:RoutePointExtension><gpxx:rpt>` list of shaping points (lat/lon only, no time).
-- Output: a `<trk>` / `<trkseg>` with one `<trkpt>` per shaping point (and per route point), in order. Route point `<rtept>` coordinates themselves are included as track points at the appropriate positions.
-- Namespaces to preserve/declare on output: `http://www.topografix.com/GPX/1/1` and `http://www.garmin.com/xmlschemas/GpxExtensions/v3` (prefix `gpxx`). Other Garmin namespaces (TrackPointExtension v1/v2, TrackStatsExtension) may appear on input and should be tolerated.
-- Parse with `DOMParser` and serialise with `XMLSerializer` — both are available in the browser, which keeps the "pure JS, no dependencies" constraint.
+There is no `package.json`. The tool runs by serving the repo root statically:
+
+```
+http-server -p 8000 .           # any static server works
+# open http://localhost:8000/
+```
+
+Tests (require Playwright with a Chromium install — globally installed in the dev env here, otherwise `npm i playwright && npx playwright install chromium`):
+
+```
+http-server -p 8765 -s . &
+SERVER_PID=$!
+node run-tests.mjs http://localhost:8765/    # unit-style assertions
+node e2e-check.mjs  http://localhost:8765/   # UI flow + xmllint validation
+kill $SERVER_PID
+```
+
+The runners auto-resolve Playwright from `/opt/node22/lib/node_modules/playwright/index.mjs`; override with `PLAYWRIGHT_MODULE` env var if needed.
+
+## Conversion algorithm (where to look when changing behavior)
+
+All core logic is in `gpxtotrack.js` as a single `convert()` pipeline:
+
+1. **Track synthesis** (per `<rte>`): merge rtepts + each rtept's `gpxx:rpt` list, dedupe consecutive identical lat/lon (firmware quirk — some devices repeat the rtept as the first rpt of its segment), emit `<trkpt>` for each.
+2. **Route densification**: run Ramer–Douglas–Peucker simplification (`rdpWithAnchors`, equirectangular perpendicular distance in meters) with named rtepts pinned as anchors, write survivors as the output `<rte>`'s `<rtept>` chain.
+3. **Color passthrough**: read `gpxx:RouteExtension/DisplayColor` once, emit it on both the new `<rte>` (as `RouteExtension`) and the new `<trk>` (as `TrackExtension`).
+4. **Extension filter**: delete every element in any namespace on the drop list and every `gpxx:*` element whose local name is not `RouteExtension`, `TrackExtension`, or `DisplayColor`. Remove empty `<extensions>` parents.
+5. **Schema-order reshuffle**: sort `<gpx>` children into the canonical order `metadata, wpt*, rte*, trk*, extensions*`.
+6. **Namespace scrub**: decide whether `xmlns:gpxx` is still needed by walking the output; drop every other `xmlns:*` declaration, trim `xsi:schemaLocation` to only the namespaces still referenced.
 
 ## Branching
 

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>gpxtotrack &mdash; Garmin GPX route to track</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>gpxtotrack</h1>
+    <p class="lede">
+      Convert a Garmin GPX route file into an enriched GPX with a clean route
+      (densified from Garmin's shaping points), a dense track, and the waypoints
+      &mdash; stored in generic GPX 1.1 wherever possible.
+    </p>
+
+    <section id="controls">
+      <label>
+        Route simplification tolerance
+        <input type="range" id="tolerance" min="1" max="50" step="1" value="10">
+        <output id="toleranceOut">10 m</output>
+      </label>
+      <label>
+        <input type="checkbox" id="keepRteptWaypoints">
+        Also add route points to the waypoint list
+      </label>
+    </section>
+
+    <section id="drop" class="drop-zone">
+      <p>Drop GPX files here, or</p>
+      <label class="file-button">
+        <input type="file" id="file" accept=".gpx,application/gpx+xml" multiple>
+        Choose files
+      </label>
+    </section>
+
+    <section id="results" hidden>
+      <h2>Results</h2>
+      <ul id="resultList"></ul>
+    </section>
+
+    <section id="errors" hidden>
+      <h2>Errors</h2>
+      <ul id="errorList"></ul>
+    </section>
+
+    <footer>
+      <p>
+        <a href="https://github.com/c0dev0id/gpxtotrack">Source on GitHub</a>
+        &middot; pure client-side &middot; nothing leaves your browser
+      </p>
+    </footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
