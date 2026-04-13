@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Garmin Device"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+  <trk>
+    <name>Activity Track</name>
+    <trkseg>
+      <trkpt lat="52.0000000" lon="4.0000000">
+        <ele>10.0</ele>
+        <time>2024-06-01T10:00:00Z</time>
+        <extensions>
+          <gpxtpx:TrackPointExtension>
+            <gpxtpx:hr>140</gpxtpx:hr>
+          </gpxtpx:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="52.0010000" lon="4.0010000">
+        <ele>11.0</ele>
+        <time>2024-06-01T10:00:10Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
