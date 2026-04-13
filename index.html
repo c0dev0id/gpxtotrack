@@ -15,18 +15,6 @@
       &mdash; stored in generic GPX 1.1 wherever possible.
     </p>
 
-    <section id="controls">
-      <label>
-        Route simplification tolerance
-        <input type="range" id="tolerance" min="1" max="50" step="1" value="10">
-        <output id="toleranceOut">10 m</output>
-      </label>
-      <label>
-        <input type="checkbox" id="keepRteptWaypoints">
-        Also add route points to the waypoint list
-      </label>
-    </section>
-
     <section id="drop" class="drop-zone">
       <p>Drop GPX files here, or</p>
       <label class="file-button">
@@ -35,8 +23,30 @@
       </label>
     </section>
 
+    <section id="controls" hidden>
+      <label>
+        Route simplification tolerance
+        <input type="range" id="tolerance" min="0" max="7" step="1" value="0" list="toleranceTicks">
+        <datalist id="toleranceTicks">
+          <option value="0"></option>
+          <option value="1"></option>
+          <option value="2"></option>
+          <option value="3"></option>
+          <option value="4"></option>
+          <option value="5"></option>
+          <option value="6"></option>
+          <option value="7"></option>
+        </datalist>
+        <output id="toleranceOut">10 m</output>
+      </label>
+      <label>
+        <input type="checkbox" id="keepRteptWaypoints">
+        Also add route points to the waypoint list
+      </label>
+    </section>
+
     <section id="results" hidden>
-      <h2>Results</h2>
+      <h2>Files</h2>
       <ul id="resultList"></ul>
     </section>
 
