@@ -43,6 +43,29 @@
         <input type="checkbox" id="keepRteptWaypoints">
         Also add route points to the waypoint list
       </label>
+
+      <fieldset id="colorOption" hidden>
+        <legend>Route color</legend>
+        <p class="hint">GPX 1.1 has no color field. Keeping it requires a Garmin extension in the output.</p>
+        <label><input type="radio" name="displayColor" value="keep" checked> Keep (Garmin extension)</label>
+        <label><input type="radio" name="displayColor" value="remove"> Remove</label>
+      </fieldset>
+
+      <fieldset id="routingMetaOption" hidden>
+        <legend>Routing waypoint types</legend>
+        <p class="hint">Garmin marks route points as via-points or shaping points. Only useful on Garmin
+        routing engines; no GPX 1.1 equivalent. Removing gives a cleaner file.</p>
+        <label><input type="radio" name="routingMeta" value="keep"> Keep (Garmin extension)</label>
+        <label><input type="radio" name="routingMeta" value="remove" checked> Remove</label>
+      </fieldset>
+
+      <fieldset id="thirdPartyExtOption" hidden>
+        <legend>Third-party extensions</legend>
+        <p class="hint">Extensions from non-Garmin tools (e.g. Rümo routing profile).
+        Cannot be expressed in GPX 1.1.</p>
+        <label><input type="radio" name="thirdPartyExt" value="keep"> Keep</label>
+        <label><input type="radio" name="thirdPartyExt" value="remove" checked> Remove</label>
+      </fieldset>
     </section>
 
     <section id="results" hidden>

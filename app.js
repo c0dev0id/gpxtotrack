@@ -17,11 +17,25 @@ const errorList    = document.getElementById('errorList');
 // In-memory state for every file currently on screen.
 const cards = [];
 
+// Union of feature flags across all currently loaded files.
+let unifiedFeatures = {
+  hasDisplayColor:  false,
+  hasRoutingMeta:   false,
+  hasThirdPartyExt: false,
+  anyRouteOrTrack:  false,  // true if any file has routes or existing tracks
+};
+
 tolerance.value = String(DEFAULT_INDEX);
 updateToleranceLabel();
 
 tolerance.addEventListener('input', onOptionsChanged);
 keepWpts.addEventListener('change', onOptionsChanged);
+
+for (const name of ['displayColor', 'routingMeta', 'thirdPartyExt']) {
+  for (const el of document.querySelectorAll(`input[name="${name}"]`)) {
+    el.addEventListener('change', onOptionsChanged);
+  }
+}
 
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
@@ -38,9 +52,16 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 function currentOptions() {
+  const radioVal = (name) => {
+    const el = document.querySelector(`input[name="${name}"]:checked`);
+    return el ? el.value : null;
+  };
   return {
-    toleranceM: TOLERANCE_STOPS_M[parseInt(tolerance.value, 10)] ?? TOLERANCE_STOPS_M[DEFAULT_INDEX],
-    keepRteptWaypoints: keepWpts.checked,
+    toleranceM:          TOLERANCE_STOPS_M[parseInt(tolerance.value, 10)] ?? TOLERANCE_STOPS_M[DEFAULT_INDEX],
+    keepRteptWaypoints:  keepWpts.checked,
+    displayColor:        radioVal('displayColor')  ?? 'keep',
+    routingMeta:         radioVal('routingMeta')   ?? 'remove',
+    thirdPartyExt:       radioVal('thirdPartyExt') ?? 'remove',
   };
 }
 
@@ -57,12 +78,23 @@ function onOptionsChanged() {
   for (const entry of cards) recomputePreview(entry);
 }
 
+function updateControlVisibility() {
+  document.getElementById('colorOption').hidden       = !unifiedFeatures.hasDisplayColor;
+  document.getElementById('routingMetaOption').hidden = !unifiedFeatures.hasRoutingMeta;
+  document.getElementById('thirdPartyExtOption').hidden = !unifiedFeatures.hasThirdPartyExt;
+
+  // Hide the entire controls section for pure wpt-only files with no option-gated features.
+  const isPureWptOnly = !unifiedFeatures.anyRouteOrTrack;
+  const hasAnyOption  = unifiedFeatures.hasDisplayColor || unifiedFeatures.hasRoutingMeta || unifiedFeatures.hasThirdPartyExt;
+  controlsSec.hidden = cards.length === 0 || (isPureWptOnly && !hasAnyOption);
+}
+
 async function handleFiles(files) {
   clearAll();
   for (const f of files) await handleFile(f);
   if (cards.length || errorList.childElementCount) {
-    controlsSec.hidden = cards.length === 0;
-    resultsSec.hidden  = cards.length === 0;
+    resultsSec.hidden = cards.length === 0;
+    updateControlVisibility();
   }
 }
 
@@ -83,12 +115,21 @@ async function handleFile(file) {
     return;
   }
 
+  // Accumulate feature flags from this file into the union.
+  const f = inputSummary.features;
+  if (f) {
+    if (f.hasDisplayColor)  unifiedFeatures.hasDisplayColor  = true;
+    if (f.hasRoutingMeta)   unifiedFeatures.hasRoutingMeta   = true;
+    if (f.hasThirdPartyExt) unifiedFeatures.hasThirdPartyExt = true;
+    if (!f.routeOnly || f.hasExistingTrack) unifiedFeatures.anyRouteOrTrack = true;
+  }
+
   const entry = {
     file,
     sourceText,
     inputSummary,
-    lastPreview: null,      // { gpx, stats }
-    lastPreviewError: null, // string
+    lastPreview: null,
+    lastPreviewError: null,
     cardEl: null,
     outputEl: null,
     convertBtn: null,
@@ -140,7 +181,7 @@ function renderCard(entry) {
   btn.addEventListener('click', () => onConvert(entry));
   li.appendChild(btn);
 
-  entry.cardEl = li;
+  entry.cardEl   = li;
   entry.outputEl = outCol.querySelector('.stats');
   entry.convertBtn = btn;
   resultList.appendChild(li);
@@ -191,9 +232,8 @@ function bboxStr(b) {
 }
 
 function onConvert(entry) {
-  // If options changed since last preview, recompute first (defensive).
   if (!entry.lastPreview) recomputePreview(entry);
-  if (!entry.lastPreview) return; // error path
+  if (!entry.lastPreview) return;
 
   const gpxString = entry.lastPreview.gpx;
   const blob = new Blob([gpxString], { type: 'application/gpx+xml' });
@@ -225,10 +265,16 @@ function renderError(file, err) {
 function clearAll() {
   for (const c of cards) c.cardEl.remove();
   cards.length = 0;
+  unifiedFeatures = {
+    hasDisplayColor:  false,
+    hasRoutingMeta:   false,
+    hasThirdPartyExt: false,
+    anyRouteOrTrack:  false,
+  };
   resultList.innerHTML = '';
-  errorList.innerHTML = '';
-  resultsSec.hidden = true;
-  errorsSec.hidden = true;
+  errorList.innerHTML  = '';
+  resultsSec.hidden  = true;
+  errorsSec.hidden   = true;
   controlsSec.hidden = true;
 }
 
