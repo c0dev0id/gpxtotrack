@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="DMD HUB GPX Planner"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:xsi="https://www.w3.org/2001/XMLSchema-instance"
+     xmlns:rumo="https://www.rumoadventures.com/xmlschemas/GpxExtensions/v1"
+     xmlns:gpxx="https://www.garmin.com/xmlschemas/GpxExtensions/v3"
+     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd https://www.rumoadventures.com/xmlschemas/GpxExtensions/v1 https://www.rumoadventures.com/xmlschemas/GpxExtensions/v1.xsd https://www.garmin.com/xmlschemas/GpxExtensions/v3 https://www8.garmin.com/xmlschemas/GpxExtensionsv3.xsd">
+  <metadata>
+    <name>Paessetraining_Anfahrt_2026_neu</name>
+    <desc>Anfahrt</desc>
+    <author>
+      <name>sdk</name>
+      <email id="dmd" domain="textmail.me"/>
+      <link href="https://hub.dmdnavigation.com/">
+        <text>sdk</text>
+      </link>
+    </author>
+    <time>2026-02-12T12:04:58.649Z</time>
+    <bounds minlat="47.789876" minlon="6.965017" maxlat="49.257905" maxlon="8.603817" />
+  </metadata>
+  <wpt lat="49.257865875932" lon="8.6019220940082">
+    <name>Treffpunkt der Teilnehmer</name>
+    <desc>Parkplatz Mönchberg</desc>
+    <sym>Parking</sym>
+  </wpt>
+  <wpt lat="47.929935953811" lon="6.9650557470406">
+    <name>Kruth</name>
+    <sym>Flag Start</sym>
+  </wpt>
+  <wpt lat="48.643713330947" lon="8.0274975430027">
+    <name>Treffen mit Marvon</name>
+    <sym>Parking</sym>
+  </wpt>
+  <wpt lat="48.273189465644" lon="7.4607843168766">
+    <name>Tankstopp</name>
+    <desc>TotalEnergies Access - RELAIS SELESTAT GIESSEN</desc>
+    <sym>Fuel</sym>
+  </wpt>
+  <rte>
+    <name>Teilnehmer bis Treffpunkt mit Marvin (über AB)</name>
+    <number>1</number>
+    <extensions>
+      <rumo:RouteExtension>
+        <rumo:RoutingProfile>road-fast-all</rumo:RoutingProfile>
+      </rumo:RouteExtension>
+      <gpxx:RouteExtension>
+        <gpxx:DisplayColor>Cyan</gpxx:DisplayColor>
+      </gpxx:RouteExtension>
+    </extensions>
+    <rtept lat="49.257906" lon="8.601869">
+      <name>Treffunkt Teilnehmer</name>
+    </rtept>
+    <rtept lat="48.643768" lon="8.027573">
+      <name>Treffen mit Marvin</name>
+    </rtept>
+  </rte>
+  <rte>
+    <name>Mit Marvon nach Kruth (ohne AB)</name>
+    <number>2</number>
+    <extensions>
+      <rumo:RouteExtension>
+        <rumo:RoutingProfile>road-fast-avoid--motorways</rumo:RoutingProfile>
+      </rumo:RouteExtension>
+      <gpxx:RouteExtension>
+        <gpxx:DisplayColor>Green</gpxx:DisplayColor>
+      </gpxx:RouteExtension>
+    </extensions>
+    <rtept lat="48.643765" lon="8.02758">
+      <name>Treffen mit Marvin</name>
+    </rtept>
+    <rtept lat="48.273153" lon="7.460643">
+      <name>Tankstopp</name>
+    </rtept>
+    <rtept lat="47.92989" lon="6.965017">
+      <name>Kruth</name>
+    </rtept>
+  </rte>
+</gpx>
