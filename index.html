@@ -2,87 +2,77 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>gpxtotrack &mdash; Garmin GPX route to track</title>
+  <title>gpxtotrack &mdash; clean GPX for any device</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <h1>gpxtotrack</h1>
-    <p class="lede">
-      Convert a Garmin GPX route file into an enriched GPX with a clean route
-      (densified from Garmin's shaping points), a dense track, and the waypoints
-      &mdash; stored in generic GPX 1.1 wherever possible.
-    </p>
+    <header class="app-header">
+      <h1>gpxtotrack</h1>
+      <p class="tagline">Convert Garmin route files to clean GPX&nbsp;1.1 that works on any device.</p>
+      <p class="privacy-note">&#128274; Processed locally &mdash; files never leave your browser.</p>
+    </header>
 
     <section id="drop" class="drop-zone">
-      <p>Drop GPX files here, or</p>
+      <p class="drop-msg">Drop GPX files here</p>
+      <p class="drop-or">or</p>
       <label class="file-button">
         <input type="file" id="file" accept=".gpx,application/gpx+xml" multiple>
-        Choose files
+        <span id="browseLabel">Browse&hellip;</span>
       </label>
     </section>
 
     <section id="controls" hidden>
-      <label>
-        Route simplification tolerance
+      <label class="control-row">
+        <span class="control-label">Route simplification</span>
         <input type="range" id="tolerance" min="0" max="7" step="1" value="0" list="toleranceTicks">
         <datalist id="toleranceTicks">
-          <option value="0"></option>
-          <option value="1"></option>
-          <option value="2"></option>
-          <option value="3"></option>
-          <option value="4"></option>
-          <option value="5"></option>
-          <option value="6"></option>
-          <option value="7"></option>
+          <option value="0"></option><option value="1"></option>
+          <option value="2"></option><option value="3"></option>
+          <option value="4"></option><option value="5"></option>
+          <option value="6"></option><option value="7"></option>
         </datalist>
         <output id="toleranceOut">10 m</output>
       </label>
-      <label>
+      <label class="control-row control-check">
         <input type="checkbox" id="keepRteptWaypoints">
-        Also add route points to the waypoint list
+        Add route points to the waypoint list
       </label>
 
       <fieldset id="colorOption" hidden>
         <legend>Route color</legend>
-        <p class="hint">GPX 1.1 has no color field. Keeping it requires a Garmin extension in the output.</p>
+        <p class="hint">GPX&nbsp;1.1 has no color field; keeping it requires a Garmin extension.</p>
         <label><input type="radio" name="displayColor" value="keep" checked> Keep (Garmin extension)</label>
         <label><input type="radio" name="displayColor" value="remove"> Remove</label>
       </fieldset>
 
       <fieldset id="routingMetaOption" hidden>
-        <legend>Routing waypoint types</legend>
-        <p class="hint">Garmin marks route points as via-points or shaping points. Only useful on Garmin
-        routing engines; no GPX 1.1 equivalent. Removing gives a cleaner file.</p>
+        <legend>Waypoint type markers</legend>
+        <p class="hint">Garmin marks points as via-points or shaping points. Only useful on Garmin devices; no GPX&nbsp;1.1 equivalent.</p>
         <label><input type="radio" name="routingMeta" value="keep"> Keep (Garmin extension)</label>
         <label><input type="radio" name="routingMeta" value="remove" checked> Remove</label>
       </fieldset>
 
       <fieldset id="thirdPartyExtOption" hidden>
         <legend>Third-party extensions</legend>
-        <p class="hint">Extensions from non-Garmin tools (e.g. Rümo routing profile).
-        Cannot be expressed in GPX 1.1.</p>
+        <p class="hint">Extensions from other tools (e.g.&nbsp;Rümo routing profile). Cannot be expressed in GPX&nbsp;1.1.</p>
         <label><input type="radio" name="thirdPartyExt" value="keep"> Keep</label>
         <label><input type="radio" name="thirdPartyExt" value="remove" checked> Remove</label>
       </fieldset>
     </section>
 
     <section id="results" hidden>
-      <h2>Files</h2>
       <ul id="resultList"></ul>
     </section>
 
     <section id="errors" hidden>
-      <h2>Errors</h2>
+      <h2 class="section-error-heading">Errors</h2>
       <ul id="errorList"></ul>
     </section>
 
     <footer>
-      <p>
-        <a href="https://github.com/c0dev0id/gpxtotrack">Source on GitHub</a>
-        &middot; pure client-side &middot; nothing leaves your browser
-      </p>
+      <a href="https://github.com/c0dev0id/gpxtotrack">Source on GitHub</a>
     </footer>
   </main>
 

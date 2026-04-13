@@ -78,6 +78,15 @@ function onOptionsChanged() {
   for (const entry of cards) recomputePreview(entry);
 }
 
+function updateDropZone() {
+  const compact = cards.length > 0;
+  dropZone.classList.toggle('compact', compact);
+  dropZone.querySelector('.drop-msg').textContent = compact
+    ? 'Replace files — drop here or'
+    : 'Drop GPX files here';
+  document.getElementById('browseLabel').textContent = compact ? 'browse' : 'Browse\u2026';
+}
+
 function updateControlVisibility() {
   document.getElementById('colorOption').hidden       = !unifiedFeatures.hasDisplayColor;
   document.getElementById('routingMetaOption').hidden = !unifiedFeatures.hasRoutingMeta;
@@ -92,6 +101,7 @@ function updateControlVisibility() {
 async function handleFiles(files) {
   clearAll();
   for (const f of files) await handleFile(f);
+  updateDropZone();
   if (cards.length || errorList.childElementCount) {
     resultsSec.hidden = cards.length === 0;
     updateControlVisibility();
@@ -152,10 +162,9 @@ function recomputePreview(entry) {
 
 function renderCard(entry) {
   const li = document.createElement('li');
-  li.className = 'card';
 
   const head = document.createElement('div');
-  head.className = 'file';
+  head.className = 'card-filename';
   head.textContent = entry.file.name;
   li.appendChild(head);
 
@@ -163,26 +172,31 @@ function renderCard(entry) {
   grid.className = 'summary-grid';
 
   const inCol = document.createElement('div');
-  inCol.className = 'summary';
+  inCol.className = 'summary-col';
   inCol.innerHTML = '<h3>Input</h3>' + inputSummaryHtml(entry.inputSummary);
   grid.appendChild(inCol);
 
   const outCol = document.createElement('div');
-  outCol.className = 'summary';
-  outCol.innerHTML = '<h3>Output (preview)</h3><div class="stats">&hellip;</div>';
+  outCol.className = 'summary-col';
+  outCol.innerHTML = '<h3>Output</h3><ul class="stats"><li class="note">\u2026</li></ul>';
   grid.appendChild(outCol);
 
   li.appendChild(grid);
 
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'convert';
-  btn.textContent = 'Convert';
+  btn.className = 'download';
+  btn.textContent = 'Download';
   btn.addEventListener('click', () => onConvert(entry));
-  li.appendChild(btn);
+  actions.appendChild(btn);
 
-  entry.cardEl   = li;
-  entry.outputEl = outCol.querySelector('.stats');
+  li.appendChild(actions);
+
+  entry.cardEl     = li;
+  entry.outputEl   = outCol.querySelector('.stats');
   entry.convertBtn = btn;
   resultList.appendChild(li);
 }
@@ -190,7 +204,7 @@ function renderCard(entry) {
 function paintOutput(entry) {
   if (!entry.outputEl) return;
   if (entry.lastPreviewError) {
-    entry.outputEl.innerHTML = '<span class="err">' + escape(entry.lastPreviewError) + '</span>';
+    entry.outputEl.outerHTML = '<ul class="stats"><li class="err">' + escape(entry.lastPreviewError) + '</li></ul>';
     entry.convertBtn.disabled = true;
     return;
   }
@@ -200,24 +214,31 @@ function paintOutput(entry) {
 }
 
 function inputSummaryHtml(s) {
-  return '<ul class="stats">' +
-    row(count(s.routes, 'route', 'routes')) +
-    row(count(s.rtepts, 'route point', 'route points')) +
-    row(count(s.rpts, 'shaping point', 'shaping points')) +
-    row(count(s.waypoints, 'waypoint', 'waypoints')) +
-    (s.tracks ? row(count(s.tracks, 'existing track', 'existing tracks') + ' (' + s.trkpts + ' points)') : '') +
-    (s.bounds ? row(bboxStr(s.bounds)) : '') +
-    '</ul>';
+  const items = [];
+  if (s.routes)    items.push(count(s.routes, 'route', 'routes'));
+  if (s.rtepts)    items.push(count(s.rtepts, 'route point', 'route points'));
+  if (s.rpts)      items.push(count(s.rpts, 'shaping point', 'shaping points'));
+  if (s.waypoints) items.push(count(s.waypoints, 'waypoint', 'waypoints'));
+  if (s.tracks)    items.push(count(s.tracks, 'existing track', 'existing tracks') + ' (' + s.trkpts + ' pts)');
+  if (s.bounds)    items.push(bboxStr(s.bounds));
+  return '<ul class="stats">' + items.map(row).join('') + '</ul>';
 }
 
 function outputSummaryHtml(s, input) {
-  return '<ul class="stats">' +
-    row(count(s.routes, 'route', 'routes')) +
-    row(input.rtepts + ' → ' + s.outputRtepts + ' route points') +
-    row(s.outputTrkpts + ' track points') +
-    row(count(s.outputWaypoints, 'waypoint', 'waypoints')) +
-    (s.bounds ? row(bboxStr(s.bounds)) : '') +
-    '</ul>';
+  const items = [];
+  if (s.duplicateRoutesDropped > 0)
+    items.push('<span class="note">' + escape(s.duplicateRoutesDropped + ' duplicate route variant' + (s.duplicateRoutesDropped === 1 ? '' : 's') + ' removed') + '</span>');
+  if (s.routes)
+    items.push(count(s.routes, 'route', 'routes'));
+  if (input.rtepts || s.outputRtepts)
+    items.push(input.rtepts + '\u2009\u2192\u2009' + s.outputRtepts + ' route points');
+  if (s.outputTrkpts)
+    items.push(s.outputTrkpts + ' track points');
+  if (s.outputWaypoints)
+    items.push(count(s.outputWaypoints, 'waypoint', 'waypoints'));
+  if (s.bounds)
+    items.push(bboxStr(s.bounds));
+  return '<ul class="stats">' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
 }
 
 function row(text) { return '<li>' + escape(text) + '</li>'; }
@@ -244,15 +265,20 @@ function onConvert(entry) {
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+
+  const btn = entry.convertBtn;
+  btn.textContent = '\u2713 Downloaded';
+  btn.classList.add('done');
   setTimeout(() => {
-    URL.revokeObjectURL(url);
-    a.remove();
-  }, 0);
+    btn.textContent = 'Download';
+    btn.classList.remove('done');
+  }, 2000);
 }
 
 function normalizedFilename(name) {
   const m = name.match(/^(.*?)(\.gpx)?$/i);
-  return (m ? m[1] : name) + '- normalized.gpx';
+  return (m ? m[1] : name) + ' - normalized.gpx';
 }
 
 function renderError(file, err) {
@@ -276,6 +302,7 @@ function clearAll() {
   resultsSec.hidden  = true;
   errorsSec.hidden   = true;
   controlsSec.hidden = true;
+  updateDropZone();
 }
 
 function fmtCoord(n) { return n.toFixed(5); }
