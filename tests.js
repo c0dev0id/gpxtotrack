@@ -124,9 +124,9 @@ export const tests = [
     const { gpx } = convert(src);
     const doc = parse(gpx);
     const root = doc.documentElement;
-    // Two tracks in output: the pre-existing one + the one synthesized from the route.
+    // When the input already has a <trk>, no synthesis: only the pre-existing track is kept.
     const trks = qsaNS(root, GPX_NS, 'trk');
-    log('mixed: 2 <trk> in output (existing + synthesized)', trks.length === 2, 'got ' + trks.length);
+    log('mixed: 1 <trk> in output (existing only, no synthesis)', trks.length === 1, 'got ' + trks.length);
     // Pre-existing trkpt survives.
     const preTrk = trks.find((t) => firstChildElNS(t, GPX_NS, 'name')?.textContent === 'Pre-existing track');
     log('mixed: pre-existing track is kept by name', !!preTrk);
@@ -178,12 +178,13 @@ export const tests = [
     log('rejects non-<gpx> root', threw);
   },
 
-  async function rejects_zero_routes({ log, convert }) {
-    let threw = false;
+  async function empty_gpx_succeeds({ log, convert }) {
+    // A file with no routes, tracks, or waypoints should succeed (pass-through path).
+    let threw = false, result = null;
     try {
-      convert('<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="x"/>');
+      result = convert('<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="x"/>');
     } catch (e) { threw = true; }
-    log('rejects input with no <rte>', threw);
+    log('empty gpx succeeds without throwing', !threw && result !== null);
   },
 
   async function summarizeInput_basecamp({ log, summarizeInput, loadFixture }) {
@@ -209,6 +210,115 @@ export const tests = [
     let threw = false;
     try { summarizeInput('<notgpx/>'); } catch (e) { threw = true; }
     log('summarizeInput rejects non-<gpx> root', threw);
+  },
+
+  // ---- New tests for extension-aware conversion ----
+
+  async function routing_meta_removed_by_default({ log, convert, parse, loadFixture }) {
+    const src = await loadFixture('routing-meta.gpx');
+    const { gpx } = convert(src);
+    const doc = parse(gpx);
+    const TRP_NS = 'http://www.garmin.com/xmlschemas/TripExtensions/v1';
+    const trpEls = doc.documentElement.getElementsByTagNameNS(TRP_NS, '*');
+    log('routing-meta: trp: elements absent by default', trpEls.length === 0, 'got ' + trpEls.length);
+  },
+
+  async function routing_meta_kept({ log, convert, parse, loadFixture }) {
+    const src = await loadFixture('routing-meta.gpx');
+    const { gpx } = convert(src, { routingMeta: 'keep' });
+    const doc = parse(gpx);
+    const TRP_NS = 'http://www.garmin.com/xmlschemas/TripExtensions/v1';
+    const trpEls = doc.documentElement.getElementsByTagNameNS(TRP_NS, '*');
+    log('routing-meta: trp: elements survive with routingMeta=keep', trpEls.length > 0, 'got ' + trpEls.length);
+  },
+
+  async function display_color_removed({ log, convert, parse, loadFixture, GPX_NS, GPXX_NS }) {
+    const src = await loadFixture('colored-route.gpx');
+    const { gpx } = convert(src, { displayColor: 'remove' });
+    const doc = parse(gpx);
+    const root = doc.documentElement;
+    const dc = root.getElementsByTagNameNS(GPXX_NS, 'DisplayColor');
+    log('display-color-removed: no DisplayColor in output', dc.length === 0, 'got ' + dc.length);
+    log('display-color-removed: no xmlns:gpxx declared', !root.hasAttribute('xmlns:gpxx'));
+  },
+
+  async function track_only_passthrough({ log, convert, parse, loadFixture, GPX_NS }) {
+    const src = await loadFixture('track-only.gpx');
+    let result = null, threw = false;
+    try { result = convert(src); } catch (e) { threw = true; }
+    log('track-only: no error thrown', !threw);
+    if (threw) return;
+    const doc = parse(result.gpx);
+    const root = doc.documentElement;
+    log('track-only: 1 trk preserved', root.getElementsByTagNameNS(GPX_NS, 'trk').length === 1,
+        'got ' + root.getElementsByTagNameNS(GPX_NS, 'trk').length);
+    log('track-only: 2 trkpts preserved', root.getElementsByTagNameNS(GPX_NS, 'trkpt').length === 2,
+        'got ' + root.getElementsByTagNameNS(GPX_NS, 'trkpt').length);
+    log('track-only: gpxtpx elements stripped',
+        !hasAnyNS(root, 'http://www.garmin.com/xmlschemas/TrackPointExtension/v1'));
+    log('track-only: stats.outputTrkpts == 2', result.stats.outputTrkpts === 2, 'got ' + result.stats.outputTrkpts);
+    log('track-only: stats.routes == 0', result.stats.routes === 0, 'got ' + result.stats.routes);
+  },
+
+  async function no_synthesis_when_track_exists({ log, convert, parse, loadFixture, GPX_NS }) {
+    const src = await loadFixture('mixed.gpx');
+    const { gpx, stats } = convert(src);
+    const doc = parse(gpx);
+    const root = doc.documentElement;
+    log('no-synthesis: 1 trk (existing), not 2',
+        root.getElementsByTagNameNS(GPX_NS, 'trk').length === 1,
+        'got ' + root.getElementsByTagNameNS(GPX_NS, 'trk').length);
+    log('no-synthesis: stats.routes == 1', stats.routes === 1, 'got ' + stats.routes);
+    log('no-synthesis: stats.outputTrkpts from existing track', stats.outputTrkpts === 2, 'got ' + stats.outputTrkpts);
+  },
+
+  async function wpt_address_auto_converted({ log, convert, parse, loadFixture, GPX_NS }) {
+    const src = await loadFixture('route-with-waypoints.gpx');
+    const { gpx } = convert(src);
+    const doc = parse(gpx);
+    const root = doc.documentElement;
+    const wpts = root.getElementsByTagNameNS(GPX_NS, 'wpt');
+    const wpt  = wpts[0];
+    const desc = wpt ? firstChildElNS(wpt, GPX_NS, 'desc') : null;
+    log('wpt-address: <desc> auto-filled from gpxx:Address',
+        !!(desc && desc.textContent.includes('Main St 1')),
+        'desc=' + (desc ? desc.textContent : 'null'));
+  },
+
+  async function summarizeInput_features({ log, summarizeInput, loadFixture }) {
+    const s1 = summarizeInput(await loadFixture('routing-meta.gpx'));
+    log('features routing-meta: hasRoutingMeta',    s1.features.hasRoutingMeta    === true);
+    log('features routing-meta: !hasDisplayColor',  s1.features.hasDisplayColor   === false);
+    log('features routing-meta: !hasThirdPartyExt', s1.features.hasThirdPartyExt  === false);
+
+    const s2 = summarizeInput(await loadFixture('colored-route.gpx'));
+    log('features colored: hasDisplayColor', s2.features.hasDisplayColor === true);
+
+    const s3 = summarizeInput(await loadFixture('third-party-ext.gpx'));
+    log('features third-party: hasThirdPartyExt', s3.features.hasThirdPartyExt === true);
+
+    const s4 = summarizeInput(await loadFixture('track-only.gpx'));
+    log('features track-only: routeOnly',        s4.features.routeOnly        === true);
+    log('features track-only: hasExistingTrack', s4.features.hasExistingTrack === true);
+  },
+
+  async function third_party_ext_removed_by_default({ log, convert, parse, loadFixture }) {
+    const src = await loadFixture('third-party-ext.gpx');
+    const { gpx } = convert(src);
+    const doc = parse(gpx);
+    const RUMO_NS = 'https://www.rumoadventures.com/xmlschemas/GpxExtensions/v1';
+    const rumoEls = doc.documentElement.getElementsByTagNameNS(RUMO_NS, '*');
+    log('third-party: rumo: elements absent by default', rumoEls.length === 0, 'got ' + rumoEls.length);
+    log('third-party: xmlns:rumo removed', !doc.documentElement.hasAttribute('xmlns:rumo'));
+  },
+
+  async function third_party_ext_kept({ log, convert, parse, loadFixture }) {
+    const src = await loadFixture('third-party-ext.gpx');
+    const { gpx } = convert(src, { thirdPartyExt: 'keep' });
+    const doc = parse(gpx);
+    const RUMO_NS = 'https://www.rumoadventures.com/xmlschemas/GpxExtensions/v1';
+    const rumoEls = doc.documentElement.getElementsByTagNameNS(RUMO_NS, '*');
+    log('third-party: rumo: elements survive with thirdPartyExt=keep', rumoEls.length > 0, 'got ' + rumoEls.length);
   },
 
 ];
