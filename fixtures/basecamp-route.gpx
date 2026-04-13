@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="BaseCamp 4.7"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www.garmin.com/xmlschemas/GpxExtensionsv3.xsd">
+  <metadata>
+    <link href="http://www.garmin.com"><text>Garmin International</text></link>
+    <time>2024-01-01T00:00:00Z</time>
+  </metadata>
+  <rte>
+    <name>BC Demo Route</name>
+    <desc>Two legs, each with shaping points.</desc>
+    <rtept lat="52.0000000" lon="4.0000000">
+      <name>Start</name>
+      <sym>Flag, Blue</sym>
+      <extensions>
+        <gpxx:RoutePointExtension>
+          <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          <gpxx:rpt lat="52.0020000" lon="4.0020000"/>
+          <gpxx:rpt lat="52.0030000" lon="4.0045000"/>
+          <gpxx:rpt lat="52.0040000" lon="4.0070000"/>
+        </gpxx:RoutePointExtension>
+      </extensions>
+    </rtept>
+    <rtept lat="52.0050000" lon="4.0080000">
+      <name>Turn</name>
+      <extensions>
+        <gpxx:RoutePointExtension>
+          <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          <gpxx:rpt lat="52.0060000" lon="4.0090000"/>
+          <gpxx:rpt lat="52.0075000" lon="4.0098000"/>
+        </gpxx:RoutePointExtension>
+      </extensions>
+    </rtept>
+    <rtept lat="52.0100000" lon="4.0100000">
+      <name>End</name>
+    </rtept>
+  </rte>
+</gpx>

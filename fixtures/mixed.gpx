@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Garmin Edge"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+  <rte>
+    <name>Mixed route</name>
+    <rtept lat="52.0000000" lon="4.0000000">
+      <extensions>
+        <gpxx:RoutePointExtension>
+          <gpxx:rpt lat="52.0015000" lon="4.0015000"/>
+          <gpxx:rpt lat="52.0030000" lon="4.0040000"/>
+        </gpxx:RoutePointExtension>
+      </extensions>
+    </rtept>
+    <rtept lat="52.0050000" lon="4.0050000"/>
+  </rte>
+  <trk>
+    <name>Pre-existing track</name>
+    <trkseg>
+      <trkpt lat="53.0000000" lon="5.0000000">
+        <time>2024-06-01T10:00:00Z</time>
+        <extensions>
+          <gpxtpx:TrackPointExtension>
+            <gpxtpx:hr>150</gpxtpx:hr>
+            <gpxtpx:cad>85</gpxtpx:cad>
+          </gpxtpx:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="53.0010000" lon="5.0010000">
+        <time>2024-06-01T10:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="BaseCamp"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">
+  <rte>
+    <name>Colored route</name>
+    <extensions>
+      <gpxx:RouteExtension>
+        <gpxx:IsAutoNamed>false</gpxx:IsAutoNamed>
+        <gpxx:DisplayColor>DarkRed</gpxx:DisplayColor>
+      </gpxx:RouteExtension>
+    </extensions>
+    <rtept lat="52.0000000" lon="4.0000000">
+      <extensions>
+        <gpxx:RoutePointExtension>
+          <gpxx:rpt lat="52.0010000" lon="4.0010000"/>
+          <gpxx:rpt lat="52.0020000" lon="4.0025000"/>
+        </gpxx:RoutePointExtension>
+      </extensions>
+    </rtept>
+    <rtept lat="52.0030000" lon="4.0040000"/>
+  </rte>
+</gpx>
