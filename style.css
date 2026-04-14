@@ -297,10 +297,7 @@ h1 {
 }
 
 /* Removed route state */
-.opt-group.removed .opt-row:not(.remove-row),
-.opt-group.removed .opt-slider-row,
-.opt-group.removed .ext-row,
-.opt-group.removed .ext-section-label {
+.opt-group.removed > *:not(.remove-row) {
   opacity: 0.35;
   pointer-events: none;
 }

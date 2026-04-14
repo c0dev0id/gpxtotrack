@@ -147,7 +147,7 @@ function renderOptionsColumn(a) {
     const removeInp = document.createElement('input');
     removeInp.type = 'checkbox';
     removeInp.id = removeId;
-    removeInp.addEventListener('change', () => applyRouteRemoved(group, removeInp.checked, removeId));
+    removeInp.addEventListener('change', () => applyRouteRemoved(group, removeInp.checked));
     removeLbl.appendChild(removeInp);
     removeLbl.appendChild(document.createTextNode(' Remove route'));
     removeRow.appendChild(removeLbl);
@@ -205,7 +205,7 @@ function gatherOptions() {
   const routes = [];
   for (const r of analysis.routes) {
     if (checkboxVal('route-remove-' + r.index)) {
-      routes.push({ keep: false });
+      routes.push({ keep: false, createTrack: false, createDenseRoute: false, addRteptsToWaypoints: false });
       continue;
     }
 
@@ -259,10 +259,10 @@ function gatherOptions() {
   return { routes, tracks, waypointExtensions };
 }
 
-function applyRouteRemoved(groupEl, removed, removeId) {
+function applyRouteRemoved(groupEl, removed) {
   groupEl.classList.toggle('removed', removed);
-  for (const inp of groupEl.querySelectorAll('input:not(#' + removeId + ')')) {
-    inp.disabled = removed;
+  for (const inp of groupEl.querySelectorAll('input')) {
+    if (!inp.closest('.remove-row')) inp.disabled = removed;
   }
 }
 
@@ -292,7 +292,7 @@ function syncOptionsFromFirst() {
       const removeId = 'route-remove-' + r.index;
       setCheckboxVal(removeId, removeVal);
       const group = optionsBody.querySelector('[data-route-index="' + r.index + '"]');
-      if (group) applyRouteRemoved(group, removeVal, removeId);
+      if (group) applyRouteRemoved(group, removeVal);
       if (r.hasShapingPoints && first.hasShapingPoints) {
         setCheckboxVal('route-track-' + r.index, trackVal);
         setCheckboxVal('route-dense-' + r.index, denseVal);
