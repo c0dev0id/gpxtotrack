@@ -1,7 +1,7 @@
 import { convert, analyzeInput, GPXX_NS, TRP_NS, CTX_NS, WPTX1_NS } from './gpxtotrack.js';
 
 const TOLERANCE_STOPS_M = [10, 20, 50, 100, 250, 500, 750, 1000];
-const DEFAULT_TOLERANCE_INDEX = 0;
+const DEFAULT_TOLERANCE_INDEX = 4; // 250 m
 
 // DOM elements
 const upload      = document.getElementById('upload');
