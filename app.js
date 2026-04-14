@@ -144,11 +144,7 @@ function renderOptionsColumn(a) {
     // Default: Remove if isTrip or isRoutePointExt, else Keep
     const defaultKeep = !(r.isTrip || r.isRoutePointExt);
 
-    // Keep / Remove radio
-    group.appendChild(makeRadioRow('route-keep-' + r.index, [
-      { value: 'keep', label: 'Keep original route', checked: defaultKeep },
-      { value: 'remove', label: 'Remove original route', checked: !defaultKeep },
-    ]));
+    group.appendChild(makeCheckbox('route-keep-' + r.index, 'Keep original route', defaultKeep, false));
 
     if (r.hasShapingPoints) {
       // Conversion options
@@ -174,10 +170,7 @@ function renderOptionsColumn(a) {
     group.dataset.trackIndex = t.index;
     group.appendChild(elText('div', t.name, 'opt-group-title'));
 
-    group.appendChild(makeRadioRow('track-keep-' + t.index, [
-      { value: 'keep', label: 'Keep', checked: true },
-      { value: 'remove', label: 'Remove', checked: false },
-    ]));
+    group.appendChild(makeCheckbox('track-keep-' + t.index, 'Keep track', true, false));
 
     if (t.extensions.length) {
       group.appendChild(elText('div', 'Extensions', 'ext-section-label'));
@@ -204,8 +197,7 @@ function renderOptionsColumn(a) {
 function gatherOptions() {
   const routes = [];
   for (const r of analysis.routes) {
-    const keepVal = radioVal('route-keep-' + r.index);
-    const keep = keepVal !== 'remove';
+    const keep = checkboxVal('route-keep-' + r.index);
 
     let createTrack = false;
     let createDenseRoute = false;
@@ -233,8 +225,7 @@ function gatherOptions() {
 
   const tracks = [];
   for (const t of analysis.tracks) {
-    const keepVal = radioVal('track-keep-' + t.index);
-    const keep = keepVal !== 'remove';
+    const keep = checkboxVal('track-keep-' + t.index);
 
     const extensions = {};
     for (const ext of t.extensions) {
@@ -265,7 +256,7 @@ function syncOptionsFromFirst() {
 
   if (analysis.routes.length > 1) {
     const first = analysis.routes[0];
-    const keepVal = radioVal('route-keep-' + first.index);
+    const keepVal = checkboxVal('route-keep-' + first.index);
     let trackVal, denseVal, tolVal, wptsVal;
     if (first.hasShapingPoints) {
       trackVal = checkboxVal('route-track-' + first.index);
@@ -281,7 +272,7 @@ function syncOptionsFromFirst() {
 
     for (let i = 1; i < analysis.routes.length; i++) {
       const r = analysis.routes[i];
-      if (keepVal) setRadioVal('route-keep-' + r.index, keepVal);
+      setCheckboxVal('route-keep-' + r.index, keepVal);
       if (r.hasShapingPoints && first.hasShapingPoints) {
         setCheckboxVal('route-track-' + r.index, trackVal);
         setCheckboxVal('route-dense-' + r.index, denseVal);
@@ -301,7 +292,7 @@ function syncOptionsFromFirst() {
 
   if (analysis.tracks.length > 1) {
     const first = analysis.tracks[0];
-    const keepVal = radioVal('track-keep-' + first.index);
+    const keepVal = checkboxVal('track-keep-' + first.index);
     const extVals = {};
     for (const ext of first.extensions) {
       const key = ext.ns + '|' + ext.localName;
@@ -310,7 +301,7 @@ function syncOptionsFromFirst() {
 
     for (let i = 1; i < analysis.tracks.length; i++) {
       const t = analysis.tracks[i];
-      if (keepVal) setRadioVal('track-keep-' + t.index, keepVal);
+      setCheckboxVal('track-keep-' + t.index, keepVal);
       for (const ext of t.extensions) {
         const key = ext.ns + '|' + ext.localName;
         if (extVals[key] != null) setRadioVal('text-' + t.index + '-' + key, extVals[key]);
@@ -505,8 +496,8 @@ function makeRadioRow(name, options) {
   return row;
 }
 
-function makeCheckbox(id, label, checked) {
-  const row = el('div', 'opt-row opt-indent');
+function makeCheckbox(id, label, checked, indent = true) {
+  const row = el('div', indent ? 'opt-row opt-indent' : 'opt-row');
   const lbl = document.createElement('label');
   const inp = document.createElement('input');
   inp.type = 'checkbox';
