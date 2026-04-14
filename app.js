@@ -141,6 +141,18 @@ function renderOptionsColumn(a) {
     group.dataset.routeIndex = r.index;
     group.appendChild(elText('div', r.name, 'opt-group-title'));
 
+    const removeId = 'route-remove-' + r.index;
+    const removeRow = el('div', 'opt-row remove-row');
+    const removeLbl = document.createElement('label');
+    const removeInp = document.createElement('input');
+    removeInp.type = 'checkbox';
+    removeInp.id = removeId;
+    removeInp.addEventListener('change', () => applyRouteRemoved(group, removeInp.checked, removeId));
+    removeLbl.appendChild(removeInp);
+    removeLbl.appendChild(document.createTextNode(' Remove route'));
+    removeRow.appendChild(removeLbl);
+    group.appendChild(removeRow);
+
     if (r.hasShapingPoints) {
       // Conversion options
       group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true, false));
@@ -192,6 +204,11 @@ function renderOptionsColumn(a) {
 function gatherOptions() {
   const routes = [];
   for (const r of analysis.routes) {
+    if (checkboxVal('route-remove-' + r.index)) {
+      routes.push({ keep: false });
+      continue;
+    }
+
     let createTrack = false;
     let createDenseRoute = false;
     let toleranceM = 10;
@@ -242,6 +259,13 @@ function gatherOptions() {
   return { routes, tracks, waypointExtensions };
 }
 
+function applyRouteRemoved(groupEl, removed, removeId) {
+  groupEl.classList.toggle('removed', removed);
+  for (const inp of groupEl.querySelectorAll('input:not(#' + removeId + ')')) {
+    inp.disabled = removed;
+  }
+}
+
 // ── Sync options ─────────────────────────────
 
 function syncOptionsFromFirst() {
@@ -249,6 +273,7 @@ function syncOptionsFromFirst() {
 
   if (analysis.routes.length > 1) {
     const first = analysis.routes[0];
+    const removeVal = checkboxVal('route-remove-' + first.index);
     let trackVal, denseVal, tolVal, wptsVal;
     if (first.hasShapingPoints) {
       trackVal = checkboxVal('route-track-' + first.index);
@@ -264,6 +289,10 @@ function syncOptionsFromFirst() {
 
     for (let i = 1; i < analysis.routes.length; i++) {
       const r = analysis.routes[i];
+      const removeId = 'route-remove-' + r.index;
+      setCheckboxVal(removeId, removeVal);
+      const group = optionsBody.querySelector('[data-route-index="' + r.index + '"]');
+      if (group) applyRouteRemoved(group, removeVal, removeId);
       if (r.hasShapingPoints && first.hasShapingPoints) {
         setCheckboxVal('route-track-' + r.index, trackVal);
         setCheckboxVal('route-dense-' + r.index, denseVal);

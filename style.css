@@ -296,6 +296,15 @@ h1 {
   margin: .5rem 0 .25rem;
 }
 
+/* Removed route state */
+.opt-group.removed .opt-row:not(.remove-row),
+.opt-group.removed .opt-slider-row,
+.opt-group.removed .ext-row,
+.opt-group.removed .ext-section-label {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 /* Sync button */
 .sync-btn {
   display: block;
