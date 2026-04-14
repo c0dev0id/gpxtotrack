@@ -141,6 +141,11 @@ function renderOptionsColumn(a) {
     group.dataset.routeIndex = r.index;
     group.appendChild(elText('div', r.name, 'opt-group-title'));
 
+    // Default: Remove if isTrip or isRoutePointExt, else Keep
+    const defaultKeep = !(r.isTrip || r.isRoutePointExt);
+
+    group.appendChild(makeCheckbox('route-keep-' + r.index, 'Keep original route', defaultKeep, false));
+
     if (r.hasShapingPoints) {
       // Conversion options
       group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true, false));
@@ -192,6 +197,8 @@ function renderOptionsColumn(a) {
 function gatherOptions() {
   const routes = [];
   for (const r of analysis.routes) {
+    const keep = checkboxVal('route-keep-' + r.index);
+
     let createTrack = false;
     let createDenseRoute = false;
     let toleranceM = 10;
@@ -213,7 +220,7 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    routes.push({ addRteptsToWaypoints, createDenseRoute, toleranceM, createTrack, extensions });
+    routes.push({ keep, addRteptsToWaypoints, createDenseRoute, toleranceM, createTrack, extensions });
   }
 
   const tracks = [];
@@ -249,6 +256,7 @@ function syncOptionsFromFirst() {
 
   if (analysis.routes.length > 1) {
     const first = analysis.routes[0];
+    const keepVal = checkboxVal('route-keep-' + first.index);
     let trackVal, denseVal, tolVal, wptsVal;
     if (first.hasShapingPoints) {
       trackVal = checkboxVal('route-track-' + first.index);
@@ -264,6 +272,7 @@ function syncOptionsFromFirst() {
 
     for (let i = 1; i < analysis.routes.length; i++) {
       const r = analysis.routes[i];
+      setCheckboxVal('route-keep-' + r.index, keepVal);
       if (r.hasShapingPoints && first.hasShapingPoints) {
         setCheckboxVal('route-track-' + r.index, trackVal);
         setCheckboxVal('route-dense-' + r.index, denseVal);
