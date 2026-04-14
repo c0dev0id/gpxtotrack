@@ -296,6 +296,26 @@ h1 {
   margin: .5rem 0 .25rem;
 }
 
+/* Sync button */
+.sync-btn {
+  display: block;
+  width: 100%;
+  padding: .4rem 0;
+  margin-bottom: .75rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.sync-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* Convert button */
 .convert-btn {
   display: block;

@@ -128,6 +128,14 @@ function renderInputColumn(a) {
 function renderOptionsColumn(a) {
   optionsBody.innerHTML = '';
 
+  if (a.routes.length > 1 || a.tracks.length > 1) {
+    const btn = el('button', 'sync-btn');
+    btn.type = 'button';
+    btn.textContent = 'Sync options from first';
+    btn.addEventListener('click', syncOptionsFromFirst);
+    optionsBody.appendChild(btn);
+  }
+
   for (const r of a.routes) {
     const group = el('div', 'opt-group');
     group.dataset.routeIndex = r.index;
@@ -248,6 +256,78 @@ function gatherOptions() {
   }
 
   return { routes, tracks, waypointExtensions };
+}
+
+// ── Sync options ─────────────────────────────
+
+function syncOptionsFromFirst() {
+  if (!analysis) return;
+
+  if (analysis.routes.length > 1) {
+    const first = analysis.routes[0];
+    const keepVal = radioVal('route-keep-' + first.index);
+    let trackVal, denseVal, tolVal, wptsVal;
+    if (first.hasShapingPoints) {
+      trackVal = checkboxVal('route-track-' + first.index);
+      denseVal = checkboxVal('route-dense-' + first.index);
+      tolVal   = document.getElementById('route-tol-' + first.index)?.value;
+      wptsVal  = checkboxVal('route-wpts-' + first.index);
+    }
+    const extVals = {};
+    for (const ext of first.extensions) {
+      const key = ext.ns + '|' + ext.localName;
+      extVals[key] = radioVal('rext-' + first.index + '-' + key);
+    }
+
+    for (let i = 1; i < analysis.routes.length; i++) {
+      const r = analysis.routes[i];
+      if (keepVal) setRadioVal('route-keep-' + r.index, keepVal);
+      if (r.hasShapingPoints && first.hasShapingPoints) {
+        setCheckboxVal('route-track-' + r.index, trackVal);
+        setCheckboxVal('route-dense-' + r.index, denseVal);
+        const slider = document.getElementById('route-tol-' + r.index);
+        if (slider && tolVal !== undefined) {
+          slider.value = tolVal;
+          slider.dispatchEvent(new Event('input'));
+        }
+        setCheckboxVal('route-wpts-' + r.index, wptsVal);
+      }
+      for (const ext of r.extensions) {
+        const key = ext.ns + '|' + ext.localName;
+        if (extVals[key] != null) setRadioVal('rext-' + r.index + '-' + key, extVals[key]);
+      }
+    }
+  }
+
+  if (analysis.tracks.length > 1) {
+    const first = analysis.tracks[0];
+    const keepVal = radioVal('track-keep-' + first.index);
+    const extVals = {};
+    for (const ext of first.extensions) {
+      const key = ext.ns + '|' + ext.localName;
+      extVals[key] = radioVal('text-' + first.index + '-' + key);
+    }
+
+    for (let i = 1; i < analysis.tracks.length; i++) {
+      const t = analysis.tracks[i];
+      if (keepVal) setRadioVal('track-keep-' + t.index, keepVal);
+      for (const ext of t.extensions) {
+        const key = ext.ns + '|' + ext.localName;
+        if (extVals[key] != null) setRadioVal('text-' + t.index + '-' + key, extVals[key]);
+      }
+    }
+  }
+}
+
+function setRadioVal(name, value) {
+  for (const r of document.querySelectorAll('input[name="' + name + '"]')) {
+    r.checked = (r.value === value);
+  }
+}
+
+function setCheckboxVal(id, checked) {
+  const cb = document.getElementById(id);
+  if (cb) cb.checked = checked;
 }
 
 // ── Convert ──────────────────────────────────
