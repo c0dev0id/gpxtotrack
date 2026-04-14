@@ -240,7 +240,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: .5rem;
-  margin: .25rem 0 .25rem 1.25rem;
+  margin: .25rem 0;
   font-size: 13px;
 }
 

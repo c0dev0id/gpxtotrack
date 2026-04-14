@@ -148,10 +148,10 @@ function renderOptionsColumn(a) {
 
     if (r.hasShapingPoints) {
       // Conversion options
-      group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true));
-      group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', true));
+      group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true, false));
+      group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', true, false));
       group.appendChild(makeToleranceSlider('route-tol-' + r.index));
-      group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add route points to waypoints', false));
+      group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add route points to waypoints', false, false));
     }
 
     // Extensions
