@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const { chromium } = await import(
-  process.env.PLAYWRIGHT_MODULE || '/opt/node22/lib/node_modules/playwright/index.mjs'
+  process.env.PLAYWRIGHT_MODULE || new URL('./node_modules/playwright/index.mjs', import.meta.url).pathname
 );
 
 const base = process.argv[2] || 'http://localhost:8765/';

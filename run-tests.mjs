@@ -6,7 +6,7 @@
 // Resolve playwright from the user's global install to avoid requiring a
 // local node_modules just for tests.
 const playwrightEntry = process.env.PLAYWRIGHT_MODULE
-  || '/opt/node22/lib/node_modules/playwright/index.mjs';
+  || new URL('./node_modules/playwright/index.mjs', import.meta.url).pathname;
 const { chromium } = await import(playwrightEntry);
 
 const base = process.argv[2] || 'http://localhost:8000/';
