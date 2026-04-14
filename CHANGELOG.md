@@ -7,6 +7,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Per-route/track control**: Each route and track in the file gets individual keep/remove,
+  conversion options (create track, create dense route, tolerance), and per-extension keep/remove
+  toggles. Replaces the old global options panel.
+- **Dynamic extension discovery**: Extensions are enumerated from the actual file content and
+  presented as individual toggles with sensible defaults (processed extensions default to remove,
+  everything else defaults to keep).
+- **3-column layout**: Full-width input/options/output layout replaces the narrow single-column
+  card design. Explicit Convert button with separate Download button.
+- **`analyzeInput()` export**: New pure function returning structured per-route/track analysis
+  including extension lists, point counts, isTrip/isRoutePointExt flags.
+
+### Changed
+- **`convert()` API redesigned**: Now takes per-route and per-track options arrays with individual
+  `keep`, `createTrack`, `createDenseRoute`, `toleranceM`, `addRteptsToWaypoints`, and extension
+  decision maps. Backward-incompatible change.
+- **No automatic deduplication**: Duplicate routes are no longer auto-removed. All routes are
+  shown to the user with appropriate default actions (Trip/RPE variants default to Remove).
+- **Single-file focus**: Multi-file upload removed; one file at a time with full per-element control.
+- Extension filtering uses per-element decisions instead of namespace-level strip functions.
+- Stats return value now contains per-route and per-track arrays instead of flat counters.
+
+### Removed
+- Automatic route deduplication (`deduplicateRoutes()`).
+- Global conversion options (`displayColor`, `routingMeta`, `thirdPartyExt` parameters).
+- Namespace-level strip functions (`stripDropNamespaces`, `stripGpxxExcept`, etc.).
+- Live preview on option change (now uses explicit Convert button).
+- Multi-file support.
+
+### Added (earlier)
 - **Redesigned site header**: Full-width dark slate header with monospace app name, replacing the
   plain-text-on-gray treatment. Page footer also moved outside the content column.
 - **Upload icon in drop zone**: SVG upload arrow displayed when no files are loaded; hidden in the
