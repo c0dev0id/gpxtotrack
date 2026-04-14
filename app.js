@@ -1,290 +1,491 @@
-import { convert, summarizeInput } from './gpxtotrack.js';
+import { convert, analyzeInput, GPXX_NS, TRP_NS, CTX_NS, WPTX1_NS } from './gpxtotrack.js';
 
 const TOLERANCE_STOPS_M = [10, 20, 50, 100, 250, 500, 750, 1000];
-const DEFAULT_INDEX = 0;
+const DEFAULT_TOLERANCE_INDEX = 0;
 
-const fileInput    = document.getElementById('file');
-const dropZone     = document.getElementById('drop');
-const tolerance    = document.getElementById('tolerance');
-const toleranceOut = document.getElementById('toleranceOut');
-const keepWpts     = document.getElementById('keepRteptWaypoints');
-const controlsSec  = document.getElementById('controls');
-const resultsSec   = document.getElementById('results');
-const resultList   = document.getElementById('resultList');
-const errorsSec    = document.getElementById('errors');
-const errorList    = document.getElementById('errorList');
+// DOM elements
+const upload      = document.getElementById('upload');
+const fileInput   = document.getElementById('file');
+const contentEl   = document.getElementById('content');
+const inputBody   = document.getElementById('input-body');
+const optionsBody = document.getElementById('options-body');
+const outputBody  = document.getElementById('output-body');
+const convertBtn  = document.getElementById('convertBtn');
+const downloadBar = document.getElementById('download-bar');
+const downloadBtn = document.getElementById('downloadBtn');
+const errorsSec   = document.getElementById('errors');
+const errorList   = document.getElementById('errorList');
 
-// In-memory state for every file currently on screen.
-const cards = [];
+// State
+let sourceText = null;
+let analysis   = null;
+let lastResult = null;
+let fileName   = null;
 
-// True if any currently loaded file has routes or existing tracks.
-let anyRouteOrTrack = false;
+// ── Upload handlers ──────────────────────────
 
-tolerance.value = String(DEFAULT_INDEX);
-updateToleranceLabel();
-
-tolerance.addEventListener('input', onOptionsChanged);
-keepWpts.addEventListener('change', onOptionsChanged);
-
-for (const name of ['displayColor', 'routingMeta', 'thirdPartyExt']) {
-  for (const el of document.querySelectorAll(`input[name="${name}"]`)) {
-    el.addEventListener('change', onOptionsChanged);
-  }
-}
-
-fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-['dragenter', 'dragover'].forEach((ev) => dropZone.addEventListener(ev, (e) => {
-  e.preventDefault();
-  dropZone.classList.add('dragging');
-}));
-['dragleave', 'drop'].forEach((ev) => dropZone.addEventListener(ev, (e) => {
-  e.preventDefault();
-  dropZone.classList.remove('dragging');
-}));
-dropZone.addEventListener('drop', (e) => {
-  if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length) handleFile(e.target.files[0]);
 });
 
-function currentOptions() {
-  const radioVal = (name) => {
-    const el = document.querySelector(`input[name="${name}"]:checked`);
-    return el ? el.value : null;
-  };
-  return {
-    toleranceM:          TOLERANCE_STOPS_M[parseInt(tolerance.value, 10)] ?? TOLERANCE_STOPS_M[DEFAULT_INDEX],
-    keepRteptWaypoints:  keepWpts.checked,
-    displayColor:        radioVal('displayColor')  ?? 'keep',
-    routingMeta:         radioVal('routingMeta')   ?? 'remove',
-    thirdPartyExt:       radioVal('thirdPartyExt') ?? 'remove',
-  };
-}
+['dragenter', 'dragover'].forEach(ev => upload.addEventListener(ev, (e) => {
+  e.preventDefault();
+  upload.classList.add('dragging');
+}));
+['dragleave', 'drop'].forEach(ev => upload.addEventListener(ev, (e) => {
+  e.preventDefault();
+  upload.classList.remove('dragging');
+}));
+upload.addEventListener('drop', (e) => {
+  if (e.dataTransfer && e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
 
-function formatTolerance(m) {
-  return m >= 1000 ? (m / 1000) + ' km' : m + ' m';
-}
+convertBtn.addEventListener('click', onConvert);
+downloadBtn.addEventListener('click', onDownload);
 
-function updateToleranceLabel() {
-  toleranceOut.textContent = formatTolerance(currentOptions().toleranceM);
-}
-
-function onOptionsChanged() {
-  updateToleranceLabel();
-  for (const entry of cards) recomputePreview(entry);
-}
-
-function updateDropZone() {
-  const compact = cards.length > 0;
-  dropZone.classList.toggle('compact', compact);
-  dropZone.querySelector('.drop-msg').textContent = compact
-    ? 'Replace files — drop here or'
-    : 'Drop GPX files here';
-  document.getElementById('browseLabel').textContent = compact ? 'browse' : 'Browse\u2026';
-}
-
-function updateControlVisibility() {
-  // Show all controls or none — never a partial mix.
-  controlsSec.hidden = cards.length === 0 || !anyRouteOrTrack;
-}
-
-async function handleFiles(files) {
-  clearAll();
-  for (const f of files) await handleFile(f);
-  updateDropZone();
-  if (cards.length || errorList.childElementCount) {
-    resultsSec.hidden = cards.length === 0;
-    updateControlVisibility();
-  }
-}
+// ── File handling ────────────────────────────
 
 async function handleFile(file) {
-  let sourceText;
+  clearAll();
+  fileName = file.name;
+
   try {
     sourceText = await file.text();
   } catch (err) {
-    renderError(file, err);
+    renderError(file.name, err);
     return;
   }
 
-  let inputSummary;
   try {
-    inputSummary = summarizeInput(sourceText);
+    analysis = analyzeInput(sourceText);
   } catch (err) {
-    renderError(file, err);
+    renderError(file.name, err);
     return;
   }
 
-  const f = inputSummary.features;
-  if (f && (!f.routeOnly || f.hasExistingTrack)) anyRouteOrTrack = true;
+  renderInputColumn(analysis);
+  renderOptionsColumn(analysis);
+  outputBody.innerHTML = '<p class="placeholder">Click Convert to see results.</p>';
 
-  const entry = {
-    file,
-    sourceText,
-    inputSummary,
-    lastPreview: null,
-    lastPreviewError: null,
-    cardEl: null,
-    outputEl: null,
-    convertBtn: null,
-  };
-  renderCard(entry);
-  cards.push(entry);
-  recomputePreview(entry);
+  contentEl.hidden = false;
+  downloadBar.hidden = true;
+  downloadBtn.disabled = true;
+  lastResult = null;
+
+  upload.classList.add('compact');
+  upload.querySelector('.drop-msg').textContent = file.name;
+  document.getElementById('browseLabel').textContent = 'Replace\u2026';
 }
 
-function recomputePreview(entry) {
+// ── Input column ─────────────────────────────
+
+function renderInputColumn(a) {
+  inputBody.innerHTML = '';
+  for (const r of a.routes) {
+    const block = el('div', 'section-block');
+    block.dataset.routeIndex = r.index;
+    block.appendChild(elText('div', r.name, 'section-title'));
+    block.appendChild(elText('p', r.rteptCount + ' route points', 'section-detail'));
+    if (r.hasShapingPoints) {
+      block.appendChild(elText('p', r.shapingPointCount + ' shaping points', 'section-detail'));
+    }
+    if (r.isTrip) block.appendChild(elText('p', 'Trip route', 'section-detail'));
+    if (r.isRoutePointExt) block.appendChild(elText('p', 'RoutePoint Extension format', 'section-detail'));
+    if (r.extensions.length) {
+      block.appendChild(elText('p', r.extensions.length + ' extension' + (r.extensions.length === 1 ? '' : 's'), 'section-detail'));
+    }
+    inputBody.appendChild(block);
+  }
+  for (const t of a.tracks) {
+    const block = el('div', 'section-block');
+    block.dataset.trackIndex = t.index;
+    block.appendChild(elText('div', t.name, 'section-title'));
+    block.appendChild(elText('p', t.trkptCount + ' track points', 'section-detail'));
+    if (t.extensions.length) {
+      block.appendChild(elText('p', t.extensions.length + ' extension' + (t.extensions.length === 1 ? '' : 's'), 'section-detail'));
+    }
+    inputBody.appendChild(block);
+  }
+  if (a.waypoints.count > 0) {
+    const block = el('div', 'section-block');
+    block.appendChild(elText('div', 'Waypoints', 'section-title'));
+    block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
+    inputBody.appendChild(block);
+  }
+  if (a.bounds) {
+    const block = el('div', 'section-block');
+    block.appendChild(elText('div', 'Bounds', 'section-title'));
+    block.appendChild(elText('p',
+      fmtCoord(a.bounds.minLat) + ',' + fmtCoord(a.bounds.minLon) +
+      ' \u2192 ' + fmtCoord(a.bounds.maxLat) + ',' + fmtCoord(a.bounds.maxLon),
+      'section-detail'));
+    inputBody.appendChild(block);
+  }
+}
+
+// ── Options column ───────────────────────────
+
+function renderOptionsColumn(a) {
+  optionsBody.innerHTML = '';
+
+  for (const r of a.routes) {
+    const group = el('div', 'opt-group');
+    group.dataset.routeIndex = r.index;
+    group.appendChild(elText('div', r.name, 'opt-group-title'));
+
+    // Default: Remove if isTrip or isRoutePointExt, else Keep
+    const defaultKeep = !(r.isTrip || r.isRoutePointExt);
+
+    // Keep / Remove radio
+    group.appendChild(makeRadioRow('route-keep-' + r.index, [
+      { value: 'keep', label: 'Keep route', checked: defaultKeep },
+      { value: 'remove', label: 'Remove', checked: !defaultKeep },
+    ]));
+
+    if (r.hasShapingPoints) {
+      // Conversion options
+      group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true));
+      group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', true));
+      group.appendChild(makeToleranceSlider('route-tol-' + r.index));
+      group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add route points to waypoints', false));
+    }
+
+    // Extensions
+    if (r.extensions.length) {
+      group.appendChild(elText('div', 'Extensions', 'ext-section-label'));
+      for (const ext of r.extensions) {
+        group.appendChild(makeExtRow('rext-' + r.index, ext));
+      }
+    }
+
+    optionsBody.appendChild(group);
+  }
+
+  for (const t of a.tracks) {
+    const group = el('div', 'opt-group');
+    group.dataset.trackIndex = t.index;
+    group.appendChild(elText('div', t.name, 'opt-group-title'));
+
+    group.appendChild(makeRadioRow('track-keep-' + t.index, [
+      { value: 'keep', label: 'Keep', checked: true },
+      { value: 'remove', label: 'Remove', checked: false },
+    ]));
+
+    if (t.extensions.length) {
+      group.appendChild(elText('div', 'Extensions', 'ext-section-label'));
+      for (const ext of t.extensions) {
+        group.appendChild(makeExtRow('text-' + t.index, ext));
+      }
+    }
+
+    optionsBody.appendChild(group);
+  }
+
+  if (a.waypoints.extensions.length) {
+    const group = el('div', 'opt-group');
+    group.appendChild(elText('div', 'Waypoint extensions', 'opt-group-title'));
+    for (const ext of a.waypoints.extensions) {
+      group.appendChild(makeExtRow('wext', ext));
+    }
+    optionsBody.appendChild(group);
+  }
+}
+
+// ── Gather options from DOM ──────────────────
+
+function gatherOptions() {
+  const routes = [];
+  for (const r of analysis.routes) {
+    const keepVal = radioVal('route-keep-' + r.index);
+    const keep = keepVal !== 'remove';
+
+    let createTrack = false;
+    let createDenseRoute = false;
+    let toleranceM = 10;
+    let addRteptsToWaypoints = false;
+
+    if (r.hasShapingPoints) {
+      createTrack = checkboxVal('route-track-' + r.index);
+      createDenseRoute = checkboxVal('route-dense-' + r.index);
+      toleranceM = TOLERANCE_STOPS_M[parseInt(
+        document.getElementById('route-tol-' + r.index)?.value || '0', 10
+      )] ?? TOLERANCE_STOPS_M[DEFAULT_TOLERANCE_INDEX];
+      addRteptsToWaypoints = checkboxVal('route-wpts-' + r.index);
+    }
+
+    const extensions = {};
+    for (const ext of r.extensions) {
+      const key = ext.ns + '|' + ext.localName;
+      const val = radioVal('rext-' + r.index + '-' + key);
+      extensions[key] = val || ext.defaultAction;
+    }
+
+    routes.push({ keep, addRteptsToWaypoints, createDenseRoute, toleranceM, createTrack, extensions });
+  }
+
+  const tracks = [];
+  for (const t of analysis.tracks) {
+    const keepVal = radioVal('track-keep-' + t.index);
+    const keep = keepVal !== 'remove';
+
+    const extensions = {};
+    for (const ext of t.extensions) {
+      const key = ext.ns + '|' + ext.localName;
+      const val = radioVal('text-' + t.index + '-' + key);
+      extensions[key] = val || ext.defaultAction;
+    }
+
+    tracks.push({ keep, extensions });
+  }
+
+  const waypointExtensions = {};
+  if (analysis.waypoints.extensions.length) {
+    for (const ext of analysis.waypoints.extensions) {
+      const key = ext.ns + '|' + ext.localName;
+      const val = radioVal('wext-' + key);
+      waypointExtensions[key] = val || ext.defaultAction;
+    }
+  }
+
+  return { routes, tracks, waypointExtensions };
+}
+
+// ── Convert ──────────────────────────────────
+
+function onConvert() {
+  if (!sourceText || !analysis) return;
   try {
-    entry.lastPreview = convert(entry.sourceText, currentOptions());
-    entry.lastPreviewError = null;
+    lastResult = convert(sourceText, gatherOptions());
   } catch (err) {
-    entry.lastPreview = null;
-    entry.lastPreviewError = err.message || String(err);
-  }
-  paintOutput(entry);
-}
-
-function renderCard(entry) {
-  const li = document.createElement('li');
-
-  const head = document.createElement('div');
-  head.className = 'card-filename';
-  head.textContent = entry.file.name;
-  li.appendChild(head);
-
-  const grid = document.createElement('div');
-  grid.className = 'summary-grid';
-
-  const inCol = document.createElement('div');
-  inCol.className = 'summary-col';
-  inCol.innerHTML = '<h3>Input</h3>' + inputSummaryHtml(entry.inputSummary);
-  grid.appendChild(inCol);
-
-  const outCol = document.createElement('div');
-  outCol.className = 'summary-col';
-  outCol.innerHTML = '<h3>Output</h3><ul class="stats"><li class="note">\u2026</li></ul>';
-  grid.appendChild(outCol);
-
-  li.appendChild(grid);
-
-  const actions = document.createElement('div');
-  actions.className = 'card-actions';
-
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'download';
-  btn.textContent = 'Download';
-  btn.addEventListener('click', () => onConvert(entry));
-  actions.appendChild(btn);
-
-  li.appendChild(actions);
-
-  entry.cardEl     = li;
-  entry.outputEl   = outCol.querySelector('.stats');
-  entry.convertBtn = btn;
-  resultList.appendChild(li);
-}
-
-function paintOutput(entry) {
-  if (!entry.outputEl) return;
-  if (entry.lastPreviewError) {
-    entry.outputEl.outerHTML = '<ul class="stats"><li class="err">' + escape(entry.lastPreviewError) + '</li></ul>';
-    entry.convertBtn.disabled = true;
+    renderError('Conversion', err);
     return;
   }
-  const s = entry.lastPreview.stats;
-  entry.outputEl.innerHTML = outputSummaryHtml(s, entry.inputSummary);
-  entry.convertBtn.disabled = false;
+
+  // Render output column by analyzing the converted GPX
+  try {
+    const outputAnalysis = analyzeInput(lastResult.gpx);
+    renderOutputColumn(outputAnalysis, lastResult.stats);
+  } catch (err) {
+    renderError('Output analysis', err);
+    return;
+  }
+
+  downloadBar.hidden = false;
+  downloadBtn.disabled = false;
+  downloadBtn.textContent = 'Download';
+  downloadBtn.classList.remove('done');
 }
 
-function inputSummaryHtml(s) {
-  const items = [];
-  if (s.routes)    items.push(count(s.routes, 'route', 'routes'));
-  if (s.rtepts)    items.push(count(s.rtepts, 'route point', 'route points'));
-  if (s.rpts)      items.push(count(s.rpts, 'shaping point', 'shaping points'));
-  if (s.waypoints) items.push(count(s.waypoints, 'waypoint', 'waypoints'));
-  if (s.tracks)    items.push(count(s.tracks, 'existing track', 'existing tracks') + ' (' + s.trkpts + ' pts)');
-  if (s.bounds)    items.push(bboxStr(s.bounds));
-  return '<ul class="stats">' + items.map(row).join('') + '</ul>';
+// ── Output column ────────────────────────────
+
+function renderOutputColumn(a, stats) {
+  outputBody.innerHTML = '';
+
+  // Route stats
+  for (const rs of stats.routes) {
+    const block = el('div', 'section-block');
+    block.appendChild(elText('div', rs.name, 'section-title'));
+    if (rs.kept) {
+      block.appendChild(elText('p', rs.inputRtepts + ' \u2192 ' + rs.outputRtepts + ' route points'
+        + (rs.denseRouteCreated ? ' (densified)' : ''), 'section-detail'));
+    } else {
+      block.appendChild(elText('p', 'Removed', 'section-detail'));
+    }
+    if (rs.trackCreated) {
+      block.appendChild(elText('p', rs.trackTrkpts + ' track points (new track)', 'section-detail'));
+    }
+    outputBody.appendChild(block);
+  }
+
+  // Track stats
+  for (const ts of stats.tracks) {
+    const block = el('div', 'section-block');
+    block.appendChild(elText('div', ts.name, 'section-title'));
+    block.appendChild(elText('p', ts.kept ? ts.trkpts + ' track points' : 'Removed', 'section-detail'));
+    outputBody.appendChild(block);
+  }
+
+  // Output routes/tracks/wpts from analysis
+  if (a.routes.length || a.tracks.length || a.waypoints.count) {
+    const block = el('div', 'section-block');
+    block.appendChild(elText('div', 'Summary', 'section-title'));
+    if (a.routes.length)
+      block.appendChild(elText('p', a.routes.length + ' route' + (a.routes.length === 1 ? '' : 's'), 'section-detail'));
+    if (a.tracks.length)
+      block.appendChild(elText('p', a.tracks.length + ' track' + (a.tracks.length === 1 ? '' : 's'), 'section-detail'));
+    if (a.waypoints.count)
+      block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
+    if (stats.bounds)
+      block.appendChild(elText('p',
+        fmtCoord(stats.bounds.minLat) + ',' + fmtCoord(stats.bounds.minLon) +
+        ' \u2192 ' + fmtCoord(stats.bounds.maxLat) + ',' + fmtCoord(stats.bounds.maxLon),
+        'section-detail'));
+    outputBody.appendChild(block);
+  }
 }
 
-function outputSummaryHtml(s, input) {
-  const items = [];
-  if (s.duplicateRoutesDropped > 0)
-    items.push('<span class="note">' + escape(s.duplicateRoutesDropped + ' duplicate route variant' + (s.duplicateRoutesDropped === 1 ? '' : 's') + ' removed') + '</span>');
-  if (s.routes)
-    items.push(count(s.routes, 'route', 'routes'));
-  if (input.rtepts || s.outputRtepts)
-    items.push(input.rtepts + '\u2009\u2192\u2009' + s.outputRtepts + ' route points');
-  if (s.outputTrkpts)
-    items.push(s.outputTrkpts + ' track points');
-  if (s.outputWaypoints)
-    items.push(count(s.outputWaypoints, 'waypoint', 'waypoints'));
-  if (s.bounds)
-    items.push(bboxStr(s.bounds));
-  return '<ul class="stats">' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
-}
+// ── Download ─────────────────────────────────
 
-function row(text) { return '<li>' + escape(text) + '</li>'; }
-
-function count(n, singular, plural) {
-  return n + ' ' + (n === 1 ? singular : plural);
-}
-
-function bboxStr(b) {
-  return 'bbox ' + fmtCoord(b.minLat) + ',' + fmtCoord(b.minLon)
-       + ' → ' + fmtCoord(b.maxLat) + ',' + fmtCoord(b.maxLon);
-}
-
-function onConvert(entry) {
-  if (!entry.lastPreview) recomputePreview(entry);
-  if (!entry.lastPreview) return;
-
-  const gpxString = entry.lastPreview.gpx;
-  const blob = new Blob([gpxString], { type: 'application/gpx+xml' });
+function onDownload() {
+  if (!lastResult) return;
+  const blob = new Blob([lastResult.gpx], { type: 'application/gpx+xml' });
   const url  = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = normalizedFilename(entry.file.name);
+  a.download = normalizedFilename(fileName);
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
 
-  const btn = entry.convertBtn;
-  btn.textContent = '\u2713 Downloaded';
-  btn.classList.add('done');
+  downloadBtn.textContent = '\u2713 Downloaded';
+  downloadBtn.classList.add('done');
   setTimeout(() => {
-    btn.textContent = 'Download';
-    btn.classList.remove('done');
+    downloadBtn.textContent = 'Download';
+    downloadBtn.classList.remove('done');
   }, 2000);
 }
+
+// ── Helpers ──────────────────────────────────
 
 function normalizedFilename(name) {
   const m = name.match(/^(.*?)(\.gpx)?$/i);
   return (m ? m[1] : name) + ' - normalized.gpx';
 }
 
-function renderError(file, err) {
+function clearAll() {
+  sourceText = null;
+  analysis = null;
+  lastResult = null;
+  fileName = null;
+  inputBody.innerHTML = '';
+  optionsBody.innerHTML = '';
+  outputBody.innerHTML = '<p class="placeholder">Click Convert to see results.</p>';
+  errorList.innerHTML = '';
+  contentEl.hidden = true;
+  downloadBar.hidden = true;
+  downloadBtn.disabled = true;
+  errorsSec.hidden = true;
+}
+
+function renderError(context, err) {
   errorsSec.hidden = false;
   const li = document.createElement('li');
-  li.innerHTML = '<strong>' + escape(file.name) + '</strong>: ' + escape(err.message || String(err));
+  li.innerHTML = '<strong>' + esc(context) + '</strong>: ' + esc(err.message || String(err));
   errorList.appendChild(li);
 }
 
-function clearAll() {
-  for (const c of cards) c.cardEl.remove();
-  cards.length = 0;
-  anyRouteOrTrack = false;
-  resultList.innerHTML = '';
-  errorList.innerHTML  = '';
-  resultsSec.hidden  = true;
-  errorsSec.hidden   = true;
-  controlsSec.hidden = true;
-  updateDropZone();
+function formatTolerance(m) {
+  return m >= 1000 ? (m / 1000) + ' km' : m + ' m';
 }
 
 function fmtCoord(n) { return n.toFixed(5); }
 
-function escape(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function el(tag, cls) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  return e;
+}
+
+function elText(tag, text, cls) {
+  const e = el(tag, cls);
+  e.textContent = text;
+  return e;
+}
+
+function radioVal(name) {
+  const checked = document.querySelector('input[name="' + name + '"]:checked');
+  return checked ? checked.value : null;
+}
+
+function checkboxVal(id) {
+  const cb = document.getElementById(id);
+  return cb ? cb.checked : false;
+}
+
+// ── Option builders ──────────────────────────
+
+function makeRadioRow(name, options) {
+  const row = el('div', 'opt-row');
+  for (const o of options) {
+    const lbl = document.createElement('label');
+    const inp = document.createElement('input');
+    inp.type = 'radio';
+    inp.name = name;
+    inp.value = o.value;
+    if (o.checked) inp.checked = true;
+    lbl.appendChild(inp);
+    lbl.appendChild(document.createTextNode(' ' + o.label));
+    row.appendChild(lbl);
+  }
+  return row;
+}
+
+function makeCheckbox(id, label, checked) {
+  const row = el('div', 'opt-row opt-indent');
+  const lbl = document.createElement('label');
+  const inp = document.createElement('input');
+  inp.type = 'checkbox';
+  inp.id = id;
+  if (checked) inp.checked = true;
+  lbl.appendChild(inp);
+  lbl.appendChild(document.createTextNode(' ' + label));
+  row.appendChild(lbl);
+  return row;
+}
+
+function makeToleranceSlider(id) {
+  const row = el('div', 'opt-slider-row');
+  const label = document.createElement('span');
+  label.className = 'opt-slider-label';
+  label.textContent = 'Tolerance';
+
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.id = id;
+  range.min = '0';
+  range.max = String(TOLERANCE_STOPS_M.length - 1);
+  range.step = '1';
+  range.value = String(DEFAULT_TOLERANCE_INDEX);
+
+  const output = document.createElement('span');
+  output.className = 'opt-slider-label';
+  output.textContent = formatTolerance(TOLERANCE_STOPS_M[DEFAULT_TOLERANCE_INDEX]);
+
+  range.addEventListener('input', () => {
+    output.textContent = formatTolerance(TOLERANCE_STOPS_M[parseInt(range.value, 10)] ?? TOLERANCE_STOPS_M[0]);
+  });
+
+  row.appendChild(label);
+  row.appendChild(range);
+  row.appendChild(output);
+  return row;
+}
+
+function makeExtRow(prefix, ext) {
+  const key = ext.ns + '|' + ext.localName;
+  const name = prefix + '-' + key;
+
+  const row = el('div', 'ext-row');
+  row.appendChild(elText('span', ext.label, 'ext-label'));
+
+  const radios = el('span', 'ext-radios');
+  for (const action of ['keep', 'remove']) {
+    const lbl = document.createElement('label');
+    const inp = document.createElement('input');
+    inp.type = 'radio';
+    inp.name = name;
+    inp.value = action;
+    if (ext.defaultAction === action) inp.checked = true;
+    lbl.appendChild(inp);
+    lbl.appendChild(document.createTextNode(' ' + action.charAt(0).toUpperCase() + action.slice(1)));
+    radios.appendChild(lbl);
+  }
+
+  row.appendChild(radios);
+  return row;
 }
