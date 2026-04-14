@@ -1,6 +1,6 @@
 // End-to-end smoke check: open the actual UI, upload each fixture via the
-// file input, wait for the preview + Convert button to appear, click Convert,
-// capture the Playwright download, and validate with xmllint.
+// file input, wait for the 3-column content to appear, click Convert,
+// wait for Download to enable, capture the download, and validate with xmllint.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
@@ -27,12 +27,19 @@ let failures = 0;
 
 for (const name of fixtures) {
   await page.setInputFiles('#file', './fixtures/' + name);
-  // Wait for the per-file card with its Convert button (preview computed).
-  await page.waitForSelector('button.convert:not([disabled])', { timeout: 5000 });
+  // Wait for the 3-column content area to appear.
+  await page.waitForSelector('#content:not([hidden])', { timeout: 5000 });
 
+  // Click Convert.
+  await page.click('#convertBtn');
+
+  // Wait for the download button to become enabled.
+  await page.waitForSelector('#downloadBtn:not([disabled])', { timeout: 5000 });
+
+  // Click Download and capture the file.
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.click('button.convert'),
+    page.click('#downloadBtn'),
   ]);
 
   const suggested = download.suggestedFilename();
@@ -53,7 +60,7 @@ for (const name of fixtures) {
     console.error('FAIL', name, e.stderr?.toString() || e.message);
   }
 
-  // Reset for the next fixture: reload wipes the in-memory cards cleanly.
+  // Reset for the next fixture: reload wipes state cleanly.
   await page.goto(url, { waitUntil: 'load' });
 }
 
