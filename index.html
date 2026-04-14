@@ -17,69 +17,46 @@
     </div>
   </header>
 
-  <main>
-    <section id="drop" class="drop-zone">
-      <svg class="drop-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <p class="drop-msg">Drop GPX files here</p>
-      <p class="drop-or">or</p>
-      <label class="file-button">
-        <input type="file" id="file" accept=".gpx,application/gpx+xml" multiple>
-        <span id="browseLabel">Browse&hellip;</span>
-      </label>
+  <section id="upload" class="drop-zone">
+    <svg class="drop-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    <p class="drop-msg">Drop a GPX file here</p>
+    <p class="drop-or">or</p>
+    <label class="file-button">
+      <input type="file" id="file" accept=".gpx,application/gpx+xml">
+      <span id="browseLabel">Browse&hellip;</span>
+    </label>
+  </section>
+
+  <main id="content" hidden>
+    <section id="input-col" class="col">
+      <h2 class="col-label">Input</h2>
+      <div id="input-body"></div>
     </section>
-
-    <section id="controls" hidden>
-      <label class="control-row">
-        <span class="control-label">Tolerance</span>
-        <input type="range" id="tolerance" min="0" max="7" step="1" value="0" list="toleranceTicks">
-        <datalist id="toleranceTicks">
-          <option value="0"></option><option value="1"></option>
-          <option value="2"></option><option value="3"></option>
-          <option value="4"></option><option value="5"></option>
-          <option value="6"></option><option value="7"></option>
-        </datalist>
-        <output id="toleranceOut">10 m</output>
-      </label>
-      <label class="control-row control-check">
-        <input type="checkbox" id="keepRteptWaypoints">
-        Add route points to the waypoint list
-      </label>
-
-      <fieldset id="colorOption">
-        <legend>Route color</legend>
-        <p class="hint">GPX&nbsp;1.1 has no color field; keeping it requires a Garmin extension.</p>
-        <label><input type="radio" name="displayColor" value="keep" checked> Keep (Garmin extension)</label>
-        <label><input type="radio" name="displayColor" value="remove"> Remove</label>
-      </fieldset>
-
-      <fieldset id="routingMetaOption">
-        <legend>Waypoint type markers</legend>
-        <p class="hint">Garmin marks points as via-points or shaping points. Only useful on Garmin devices; no GPX&nbsp;1.1 equivalent.</p>
-        <label><input type="radio" name="routingMeta" value="keep"> Keep (Garmin extension)</label>
-        <label><input type="radio" name="routingMeta" value="remove" checked> Remove</label>
-      </fieldset>
-
-      <fieldset id="thirdPartyExtOption">
-        <legend>Third-party extensions</legend>
-        <p class="hint">Extensions from other tools (e.g.&nbsp;R&uuml;mo routing profile). Cannot be expressed in GPX&nbsp;1.1.</p>
-        <label><input type="radio" name="thirdPartyExt" value="keep"> Keep</label>
-        <label><input type="radio" name="thirdPartyExt" value="remove" checked> Remove</label>
-      </fieldset>
+    <section id="options-col" class="col">
+      <h2 class="col-label">Options</h2>
+      <div id="options-body"></div>
+      <button type="button" id="convertBtn" class="convert-btn">Convert</button>
     </section>
-
-    <section id="results" hidden>
-      <ul id="resultList"></ul>
-    </section>
-
-    <section id="errors" hidden>
-      <h2 class="section-error-heading">Errors</h2>
-      <ul id="errorList"></ul>
+    <section id="output-col" class="col">
+      <h2 class="col-label">Output</h2>
+      <div id="output-body">
+        <p class="placeholder">Click Convert to see results.</p>
+      </div>
     </section>
   </main>
+
+  <div id="download-bar" hidden>
+    <button type="button" id="downloadBtn" disabled>Download</button>
+  </div>
+
+  <section id="errors" hidden>
+    <h2 class="section-error-heading">Errors</h2>
+    <ul id="errorList"></ul>
+  </section>
 
   <footer>
     <a href="https://github.com/c0dev0id/gpxtotrack">Source on GitHub</a>
