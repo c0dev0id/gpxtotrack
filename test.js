@@ -1,4 +1,4 @@
-import { convert, summarizeInput, GPX_NS, GPXX_NS } from './gpxtotrack.js';
+import { convert, summarizeInput, analyzeInput, GPX_NS, GPXX_NS, TRP_NS, WPTX1_NS, CTX_NS } from './gpxtotrack.js';
 import { tests } from './tests.js';
 
 const output = document.getElementById('output');
@@ -24,9 +24,10 @@ const ctx = {
   log,
   convert,
   summarizeInput,
+  analyzeInput,
   parse(xml) { return new DOMParser().parseFromString(xml, 'application/xml'); },
   loadFixture,
-  GPX_NS, GPXX_NS,
+  GPX_NS, GPXX_NS, TRP_NS, WPTX1_NS, CTX_NS,
 };
 
 (async () => {

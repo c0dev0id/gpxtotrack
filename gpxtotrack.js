@@ -204,6 +204,8 @@ export function convert(gpxString, options = {}) {
         const keepFlags = rdpWithAnchors(deduped, toleranceM);
         newRte = doc.createElementNS(GPX_NS, 'rte');
         copyChildren(rte, newRte, GPX_NS, ['name', 'desc', 'cmt', 'src', 'link', 'type', 'number']);
+        // Clone route-level extensions from original, then filter.
+        cloneExtensions(rte, newRte);
 
         for (let i = 0; i < deduped.length; i++) {
           if (!keepFlags[i]) continue;
@@ -215,6 +217,8 @@ export function convert(gpxString, options = {}) {
           if (p.time) rtept.appendChild(textEl(doc, GPX_NS, 'time', p.time));
           if (p.fromRtept && p.rteptEl) {
             copyChildren(p.rteptEl, rtept, GPX_NS, ['name', 'desc', 'cmt', 'sym', 'type', 'link']);
+            // Clone extensions from original rtept, then filter.
+            cloneExtensions(p.rteptEl, rtept);
             applyExtensionDecisions(rtept, extDecisions);
           }
           if (addRteptsToWaypoints && p.fromRtept && p.rteptEl && hasAnyNamedField(p.rteptEl)) {
@@ -312,8 +316,17 @@ export function convert(gpxString, options = {}) {
 }
 
 /**
+ * Clone the <extensions> subtree from src to dst (if src has one).
+ */
+function cloneExtensions(src, dst) {
+  const ext = firstChildElNS(src, GPX_NS, 'extensions');
+  if (ext) dst.appendChild(ext.cloneNode(true));
+}
+
+/**
  * Apply extension keep/remove decisions to an element's <extensions> subtree.
  * For known wrappers (RouteExtension, etc.), checks each child individually.
+ * If the wrapper itself is marked 'remove', removes it entirely.
  * Unknown extensions (not in decisions) are kept by default.
  */
 function applyExtensionDecisions(element, decisions) {
@@ -325,7 +338,9 @@ function applyExtensionDecisions(element, decisions) {
     if (c.nodeType !== 1) continue;
     const wrapperKey = (c.namespaceURI || '') + '|' + c.localName;
     if (EXTENSION_WRAPPERS.has(wrapperKey)) {
-      // Check each child of the wrapper.
+      // If the wrapper itself is marked 'remove', remove it entirely.
+      if (decisions[wrapperKey] === 'remove') { toRemove.push(c); continue; }
+      // Otherwise check each child of the wrapper.
       const wrapperVictims = [];
       for (let gc = c.firstChild; gc; gc = gc.nextSibling) {
         if (gc.nodeType !== 1) continue;
