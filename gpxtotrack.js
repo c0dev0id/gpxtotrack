@@ -7,10 +7,10 @@
 
 export const GPX_NS  = 'http://www.topografix.com/GPX/1/1';
 export const GPXX_NS = 'http://www.garmin.com/xmlschemas/GpxExtensions/v3';
-const XSI_NS   = 'http://www.w3.org/2001/XMLSchema-instance';
-const TRP_NS   = 'http://www.garmin.com/xmlschemas/TripExtensions/v1';
-const CTX_NS   = 'http://www.garmin.com/xmlschemas/CreationTimeExtension/v1';
-const WPTX1_NS = 'http://www.garmin.com/xmlschemas/WaypointExtension/v1';
+export const XSI_NS   = 'http://www.w3.org/2001/XMLSchema-instance';
+export const TRP_NS   = 'http://www.garmin.com/xmlschemas/TripExtensions/v1';
+export const CTX_NS   = 'http://www.garmin.com/xmlschemas/CreationTimeExtension/v1';
+export const WPTX1_NS = 'http://www.garmin.com/xmlschemas/WaypointExtension/v1';
 
 // Namespaces whose elements are always stripped from the output (no user choice).
 const DROP_NAMESPACES = new Set([
@@ -401,6 +401,198 @@ export function summarizeInput(gpxString, options = {}) {
   };
 
   return { routes, rtepts, rpts, waypoints, tracks, trkpts, bounds, features };
+}
+
+// ---------------------------------------------------------------------------
+// Extension analysis helpers
+
+// Known extension wrappers: enumerate their children, not the wrapper itself.
+const EXTENSION_WRAPPERS = new Set([
+  GPXX_NS + '|RouteExtension',
+  GPXX_NS + '|TrackExtension',
+  GPXX_NS + '|WaypointExtension',
+  WPTX1_NS + '|WaypointExtension',
+]);
+
+// Extensions that default to 'remove' — the tool actively converts or discards their data.
+const DEFAULT_REMOVE_EXTENSIONS = new Set([
+  GPXX_NS + '|RoutePointExtension',
+  GPXX_NS + '|Subclass',
+  GPXX_NS + '|IsAutoNamed',
+  GPXX_NS + '|WaypointExtension',
+  WPTX1_NS + '|WaypointExtension',
+  CTX_NS + '|CreationTimeExtension',
+]);
+
+function camelToLabel(s) {
+  return s.replace(/([a-z])([A-Z])/g, '$1 $2')
+          .replace(/^./, c => c.toUpperCase());
+}
+
+function enumerateExtensions(elements) {
+  const seen = new Set();
+  const result = [];
+  for (const el of elements) {
+    const ext = firstChildElNS(el, GPX_NS, 'extensions');
+    if (!ext) continue;
+    for (let c = ext.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType !== 1) continue;
+      const wrapperKey = (c.namespaceURI || '') + '|' + c.localName;
+      if (EXTENSION_WRAPPERS.has(wrapperKey)) {
+        // Unwrap: enumerate children of the wrapper
+        for (let gc = c.firstChild; gc; gc = gc.nextSibling) {
+          if (gc.nodeType !== 1) continue;
+          const key = (gc.namespaceURI || '') + '|' + gc.localName;
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push({ ns: gc.namespaceURI || '', localName: gc.localName });
+          }
+        }
+      } else {
+        const key = (c.namespaceURI || '') + '|' + c.localName;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push({ ns: c.namespaceURI || '', localName: c.localName });
+        }
+      }
+    }
+  }
+  return result;
+}
+
+function classifyExtension(ext) {
+  const key = ext.ns + '|' + ext.localName;
+  const prefix = nsPrefix(ext.ns);
+  const label = prefix ? prefix + ': ' + camelToLabel(ext.localName) : camelToLabel(ext.localName);
+  const defaultAction = DEFAULT_REMOVE_EXTENSIONS.has(key) ? 'remove' : 'keep';
+  return { ns: ext.ns, localName: ext.localName, label, defaultAction };
+}
+
+function nsPrefix(ns) {
+  if (ns === GPXX_NS)  return 'gpxx';
+  if (ns === TRP_NS)   return 'trp';
+  if (ns === CTX_NS)   return 'ctx';
+  if (ns === WPTX1_NS) return 'wptx1';
+  // For unknown namespaces, extract a short prefix from the URL
+  const m = ns.match(/\/([^/]+?)(?:\/v\d+)?$/);
+  return m ? m[1] : '';
+}
+
+/**
+ * Analyze a GPX string and return structured info about its contents
+ * for the UI to render per-route/track options.
+ *
+ * @param {string} gpxString
+ * @param {object} [options]
+ * @param {DOMParser} [options.DOMParserImpl]
+ * @returns {{ routes, tracks, waypoints, bounds }}
+ */
+export function analyzeInput(gpxString, options = {}) {
+  const Parser = options.DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);
+  if (!Parser) throw new Error('DOMParser not available in this environment');
+
+  const doc = new Parser().parseFromString(gpxString, 'application/xml');
+  const parseErr = doc.getElementsByTagName('parsererror')[0];
+  if (parseErr) throw new Error('Failed to parse GPX: ' + parseErr.textContent.trim());
+
+  const gpx = doc.documentElement;
+  if (!gpx || gpx.localName !== 'gpx') throw new Error('Root element is not <gpx>');
+
+  const rteEls = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
+  const trkEls = Array.from(childrenByNS(gpx, GPX_NS, 'trk'));
+  const wptEls = Array.from(childrenByNS(gpx, GPX_NS, 'wpt'));
+
+  const routes = rteEls.map((rte, index) => {
+    const rteptEls = Array.from(childrenByNS(rte, GPX_NS, 'rtept'));
+    const name = firstChildText(rte, GPX_NS, 'name') || ('Route ' + (index + 1));
+
+    let shapingPointCount = 0;
+    let hasShapingPoints = false;
+    let isTrip = false;
+    let isRoutePointExt = false;
+
+    for (const rtept of rteptEls) {
+      const ext = firstChildElNS(rtept, GPX_NS, 'extensions');
+      if (!ext) continue;
+      const rpe = firstChildElNS(ext, GPXX_NS, 'RoutePointExtension');
+      if (rpe) {
+        isRoutePointExt = true;
+        shapingPointCount += childrenByNS(rpe, GPXX_NS, 'rpt').length;
+        hasShapingPoints = true;
+      }
+      // Check for TRP extensions on rtepts
+      for (let c = ext.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 1 && c.namespaceURI === TRP_NS) { isTrip = true; break; }
+      }
+    }
+    // Also check route-level extensions for TRP
+    const rteExt = firstChildElNS(rte, GPX_NS, 'extensions');
+    if (rteExt) {
+      for (let c = rteExt.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 1 && c.namespaceURI === TRP_NS) { isTrip = true; break; }
+      }
+    }
+
+    // Enumerate extensions from all rtepts + route-level
+    const allElements = [rte, ...rteptEls];
+    const extensions = enumerateExtensions(allElements).map(classifyExtension);
+
+    return {
+      index, name,
+      rteptCount: rteptEls.length,
+      shapingPointCount,
+      hasShapingPoints,
+      isTrip,
+      isRoutePointExt,
+      extensions,
+    };
+  });
+
+  const tracks = trkEls.map((trk, index) => {
+    const name = firstChildText(trk, GPX_NS, 'name') || ('Track ' + (index + 1));
+    const trkpts = trk.getElementsByTagNameNS(GPX_NS, 'trkpt');
+    const trkptCount = trkpts.length;
+
+    // Enumerate extensions from all trkpts + trkseg + trk-level
+    const allElements = [trk];
+    for (const seg of childrenByNS(trk, GPX_NS, 'trkseg')) {
+      allElements.push(seg);
+      for (const pt of childrenByNS(seg, GPX_NS, 'trkpt')) {
+        allElements.push(pt);
+      }
+    }
+    const extensions = enumerateExtensions(allElements).map(classifyExtension);
+
+    return { index, name, trkptCount, extensions };
+  });
+
+  const wptExtensions = enumerateExtensions(wptEls).map(classifyExtension);
+
+  // Bounds
+  let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
+  const scanCoords = (list) => {
+    for (const el of list) {
+      const lat = parseFloat(el.getAttribute('lat'));
+      const lon = parseFloat(el.getAttribute('lon'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+    }
+  };
+  scanCoords(wptEls);
+  scanCoords(gpx.getElementsByTagNameNS(GPX_NS, 'rtept'));
+  scanCoords(gpx.getElementsByTagNameNS(GPXX_NS, 'rpt'));
+  scanCoords(gpx.getElementsByTagNameNS(GPX_NS, 'trkpt'));
+  const bounds = minLat === Infinity ? null : { minLat, minLon, maxLat, maxLon };
+
+  return {
+    routes,
+    tracks,
+    waypoints: { count: wptEls.length, extensions: wptExtensions },
+    bounds,
+  };
 }
 
 // ---------------------------------------------------------------------------
