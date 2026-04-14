@@ -141,10 +141,7 @@ function renderOptionsColumn(a) {
     group.dataset.routeIndex = r.index;
     group.appendChild(elText('div', r.name, 'opt-group-title'));
 
-    // Default: Remove if isTrip or isRoutePointExt, else Keep
-    const defaultKeep = !(r.isTrip || r.isRoutePointExt);
-
-    group.appendChild(makeCheckbox('route-keep-' + r.index, 'Keep original route', defaultKeep, false));
+    group.appendChild(makeCheckbox('route-keep-' + r.index, 'Keep original route', false, false));
 
     if (r.hasShapingPoints) {
       // Conversion options
