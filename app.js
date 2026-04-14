@@ -138,8 +138,8 @@ function renderOptionsColumn(a) {
 
     // Keep / Remove radio
     group.appendChild(makeRadioRow('route-keep-' + r.index, [
-      { value: 'keep', label: 'Keep route', checked: defaultKeep },
-      { value: 'remove', label: 'Remove', checked: !defaultKeep },
+      { value: 'keep', label: 'Keep original route', checked: defaultKeep },
+      { value: 'remove', label: 'Remove original route', checked: !defaultKeep },
     ]));
 
     if (r.hasShapingPoints) {
@@ -289,7 +289,7 @@ function renderOutputColumn(a, stats) {
       block.appendChild(elText('p', rs.inputRtepts + ' \u2192 ' + rs.outputRtepts + ' route points'
         + (rs.denseRouteCreated ? ' (densified)' : ''), 'section-detail'));
     } else {
-      block.appendChild(elText('p', 'Removed', 'section-detail'));
+      block.appendChild(elText('p', 'Original route removed', 'section-detail'));
     }
     if (rs.trackCreated) {
       block.appendChild(elText('p', rs.trackTrkpts + ' track points (new track)', 'section-detail'));
