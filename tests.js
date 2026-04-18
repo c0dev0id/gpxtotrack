@@ -49,8 +49,8 @@ export const tests = [
     log('analyzeInput colored: has IsAutoNamed', extNames.includes('IsAutoNamed'),
         'got ' + JSON.stringify(extNames));
     const dc = a.routes[0].extensions.find(e => e.localName === 'DisplayColor');
-    log('analyzeInput colored: DisplayColor defaults to keep',
-        dc && dc.defaultAction === 'keep', dc ? dc.defaultAction : 'not found');
+    log('analyzeInput colored: DisplayColor defaults to remove',
+        dc && dc.defaultAction === 'remove', dc ? dc.defaultAction : 'not found');
     const ian = a.routes[0].extensions.find(e => e.localName === 'IsAutoNamed');
     log('analyzeInput colored: IsAutoNamed defaults to remove',
         ian && ian.defaultAction === 'remove', ian ? ian.defaultAction : 'not found');
@@ -65,10 +65,10 @@ export const tests = [
         'got ' + JSON.stringify(extNames));
     log('analyzeInput routing-meta: has ShapingPoint', extNames.includes('ShapingPoint'),
         'got ' + JSON.stringify(extNames));
-    // TRP extensions default to keep
+    // All extensions default to remove
     const vp = a.routes[0].extensions.find(e => e.localName === 'ViaPoint');
-    log('analyzeInput routing-meta: ViaPoint defaults to keep',
-        vp && vp.defaultAction === 'keep', vp ? vp.defaultAction : 'not found');
+    log('analyzeInput routing-meta: ViaPoint defaults to remove',
+        vp && vp.defaultAction === 'remove', vp ? vp.defaultAction : 'not found');
   },
 
   async function analyzeInput_duplicate_routes({ log, analyzeInput, loadFixture }) {

@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Constraints:
 
 - **Pure client-side JavaScript.** No server, no build step, no runtime deps. Served as-is from GitHub Pages.
-- **User-driven extension control.** Extensions that the tool actively converts (RPE, Subclass, IsAutoNamed, WaypointExtension, CreationTimeExtension) default to remove. Everything else (DisplayColor, TRP extensions, third-party, unknown) defaults to keep. Users can override any default.
+- **User-driven extension control.** All extensions default to remove; users can toggle any to keep. Rumo conversions (color, shaping points, via-point promotion) default to on when the relevant input is present.
 
 ## Project layout
 

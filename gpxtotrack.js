@@ -511,16 +511,6 @@ const EXTENSION_WRAPPERS = new Set([
   WPTX1_NS + '|WaypointExtension',
 ]);
 
-// Extensions that default to 'remove' — the tool actively converts or discards their data.
-const DEFAULT_REMOVE_EXTENSIONS = new Set([
-  GPXX_NS + '|RoutePointExtension',
-  GPXX_NS + '|Subclass',
-  GPXX_NS + '|IsAutoNamed',
-  GPXX_NS + '|WaypointExtension',
-  WPTX1_NS + '|WaypointExtension',
-  CTX_NS + '|CreationTimeExtension',
-]);
-
 function camelToLabel(s) {
   return s.replace(/([a-z])([A-Z])/g, '$1 $2')
           .replace(/^./, c => c.toUpperCase());
@@ -558,11 +548,9 @@ function enumerateExtensions(elements) {
 }
 
 function classifyExtension(ext) {
-  const key = ext.ns + '|' + ext.localName;
   const prefix = nsPrefix(ext.ns);
   const label = prefix ? prefix + ': ' + camelToLabel(ext.localName) : camelToLabel(ext.localName);
-  const defaultAction = DEFAULT_REMOVE_EXTENSIONS.has(key) ? 'remove' : 'keep';
-  return { ns: ext.ns, localName: ext.localName, label, defaultAction };
+  return { ns: ext.ns, localName: ext.localName, label, defaultAction: 'remove' };
 }
 
 function nsPrefix(ns) {
