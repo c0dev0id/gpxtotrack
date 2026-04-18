@@ -121,6 +121,11 @@ function renderInputColumn(a) {
 function renderOptionsColumn(a) {
   optionsBody.innerHTML = '';
 
+  const bar = el('div', 'preset-bar');
+  bar.appendChild(makePresetBtn('Preset: Garmin',   'garmin'));
+  bar.appendChild(makePresetBtn('Preset: Rumo/DMD', 'rumo'));
+  optionsBody.appendChild(bar);
+
   if (a.routes.length > 1 || a.tracks.length > 1) {
     const btn = el('button', 'sync-btn');
     btn.type = 'button';
@@ -295,6 +300,52 @@ function applyRouteRemoved(groupEl, removed) {
   for (const inp of groupEl.querySelectorAll('input')) {
     if (!inp.closest('.remove-row')) inp.disabled = removed;
   }
+}
+
+// ── Presets ──────────────────────────────────
+
+function makePresetBtn(label, preset) {
+  const btn = el('button', 'sync-btn');
+  btn.type = 'button';
+  btn.textContent = label;
+  btn.addEventListener('click', () => applyPreset(preset));
+  return btn;
+}
+
+function applyPreset(preset) {
+  if (!analysis) return;
+  const keepGarmin = preset === 'garmin';
+  const keepRumo   = preset === 'rumo';
+
+  for (const r of analysis.routes) {
+    setCheckboxVal('route-rumocolor-'     + r.index, keepRumo);
+    setCheckboxVal('route-rumoshaping-'   + r.index, keepRumo);
+    setCheckboxVal('route-garmincolor-'   + r.index, keepGarmin);
+    setCheckboxVal('route-garminshaping-' + r.index, keepGarmin);
+    setCheckboxVal('route-viawpts-'       + r.index, keepRumo);
+    applyExtPreset('rext-' + r.index + '-', r.extensions, preset);
+  }
+  for (const t of analysis.tracks) {
+    setCheckboxVal('track-rumocolor-'   + t.index, keepRumo);
+    setCheckboxVal('track-garmincolor-' + t.index, keepGarmin);
+    applyExtPreset('text-' + t.index + '-', t.extensions, preset);
+  }
+  setCheckboxVal('wext-rumo-categories',   keepRumo);
+  setCheckboxVal('wext-garmin-categories', keepGarmin);
+  applyExtPreset('wext-', analysis.waypoints.extensions, preset);
+}
+
+function applyExtPreset(namePrefix, extensions, preset) {
+  for (const ext of extensions) {
+    const action = presetActionFor(ext.vendor, preset);
+    if (action) setRadioVal(namePrefix + ext.ns + '|' + ext.localName, action);
+  }
+}
+
+function presetActionFor(vendor, preset) {
+  if (vendor === 'Garmin')   return preset === 'garmin' ? 'keep' : 'remove';
+  if (vendor === 'Rumo/DMD') return preset === 'rumo'   ? 'keep' : 'remove';
+  return null;
 }
 
 // ── Sync options ─────────────────────────────

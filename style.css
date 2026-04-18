@@ -302,6 +302,17 @@ h1 {
   pointer-events: none;
 }
 
+/* Preset bar */
+.preset-bar {
+  display: flex;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+.preset-bar .sync-btn {
+  margin-bottom: 0;
+  flex: 1;
+}
+
 /* Sync button */
 .sync-btn {
   display: block;

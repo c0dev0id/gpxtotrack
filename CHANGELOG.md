@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Preset buttons (Garmin / Rumo/DMD)**: Two buttons at the top of the Options column set
+  every per-route/track/waypoint control to the ideal configuration for the chosen target
+  ecosystem. Garmin preset keeps Garmin extensions, converts Rumo/DMD to Garmin where
+  possible, removes Rumo/DMD extensions, and unchecks Garmin via-point promotion. Rumo/DMD
+  preset is the reverse. "Other" extensions are untouched.
+
 ### Changed
 - **Section-based input/output info**: Input and output columns now render one section per route,
   one section per track, and one section for waypoints — consistent across both columns. Each
