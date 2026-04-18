@@ -1,7 +1,7 @@
 import { convert, analyzeInput, GPXX_NS, TRP_NS, CTX_NS, WPTX1_NS, RUMO_NS } from './gpxtotrack.js';
 
-const TOLERANCE_STOPS_M = [10, 20, 50, 100, 250, 500, 750, 1000];
-const DEFAULT_TOLERANCE_INDEX = 4; // 250 m
+const TOLERANCE_STOPS_M = [250, 500, 750, 1000, 2000, 3000, 5000, 7500, 10000];
+const DEFAULT_TOLERANCE_INDEX = 4; // 2 km
 
 // DOM elements
 const upload      = document.getElementById('upload');
@@ -155,18 +155,18 @@ function renderOptionsColumn(a) {
 
     if (r.hasShapingPoints) {
       // Conversion options
-      group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true, false));
-      group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', true, false));
+      group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', a.tracks.length === 0, false));
+      group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', false, false));
       group.appendChild(makeToleranceSlider('route-tol-' + r.index));
       group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add all route points to waypoints', false, false));
       if (r.hasViaPoints) {
-        group.appendChild(makeCheckbox('route-viawpts-' + r.index, 'Add via-points to waypoints list', false, false));
+        group.appendChild(makeCheckbox('route-viawpts-' + r.index, 'Add via-points to waypoints list', true, false));
       }
-      group.appendChild(makeCheckbox('route-rumoshaping-' + r.index, 'Translate shaping points to Rumo format', false, false));
+      group.appendChild(makeCheckbox('route-rumoshaping-' + r.index, 'Translate shaping points to Rumo format', true, false));
     }
 
     if (r.extensions.some(e => e.localName === 'DisplayColor' && e.ns === GPXX_NS)) {
-      group.appendChild(makeCheckbox('route-rumocolor-' + r.index, 'Convert Garmin color to Rumo format', false, false));
+      group.appendChild(makeCheckbox('route-rumocolor-' + r.index, 'Convert Garmin color to Rumo format', true, false));
     }
 
     // Extensions
@@ -188,7 +188,7 @@ function renderOptionsColumn(a) {
     group.appendChild(makeCheckbox('track-keep-' + t.index, 'Keep track', true, false));
 
     if (t.extensions.some(e => e.localName === 'DisplayColor' && e.ns === GPXX_NS)) {
-      group.appendChild(makeCheckbox('track-rumocolor-' + t.index, 'Convert Garmin color to Rumo format', false, false));
+      group.appendChild(makeCheckbox('track-rumocolor-' + t.index, 'Convert Garmin color to Rumo format', true, false));
     }
 
     if (t.extensions.length) {
