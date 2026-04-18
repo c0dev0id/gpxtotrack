@@ -94,7 +94,7 @@ function renderInputColumn(a) {
     }
     if (r.isTrip) block.appendChild(elText('p', 'Garmin trip route', 'section-detail'));
     if (r.isRoutePointExt) block.appendChild(elText('p', 'Garmin RoutePoint Extension format', 'section-detail'));
-    appendVendorBreakdown(block, r.extensions);
+    appendExtensionList(block, r.extensions);
     inputBody.appendChild(block);
   }
   for (const t of a.tracks) {
@@ -102,7 +102,7 @@ function renderInputColumn(a) {
     block.dataset.trackIndex = t.index;
     block.appendChild(elText('div', t.name, 'section-title'));
     block.appendChild(elText('p', t.trkptCount + ' track points', 'section-detail'));
-    appendVendorBreakdown(block, t.extensions);
+    appendExtensionList(block, t.extensions);
     inputBody.appendChild(block);
   }
   if (a.waypoints.count > 0 || a.bounds) {
@@ -110,7 +110,7 @@ function renderInputColumn(a) {
     block.appendChild(elText('div', 'Waypoints', 'section-title'));
     const n = a.waypoints.count;
     block.appendChild(elText('p', n + ' waypoint' + (n === 1 ? '' : 's'), 'section-detail'));
-    appendVendorBreakdown(block, a.waypoints.extensions);
+    appendExtensionList(block, a.waypoints.extensions);
     if (a.bounds) block.appendChild(elText('p', 'Bounds: ' + fmtBounds(a.bounds), 'section-detail'));
     inputBody.appendChild(block);
   }
@@ -396,13 +396,10 @@ function onConvert() {
     renderError('Conversion', err);
     return;
   }
-
-  // Render output column by analyzing the converted GPX
   try {
-    const outputAnalysis = analyzeInput(lastResult.gpx);
-    renderOutputColumn(outputAnalysis, lastResult.stats);
+    renderOutputColumn(lastResult.stats);
   } catch (err) {
-    renderError('Output analysis', err);
+    renderError('Output rendering', err);
     return;
   }
 
@@ -414,78 +411,67 @@ function onConvert() {
 
 // ── Output column ────────────────────────────
 
-function renderOutputColumn(a, stats) {
+function renderOutputColumn(stats) {
   outputBody.innerHTML = '';
 
-  // Route stats
+  // One section per input route (with removed ones marked). A synthesized
+  // track (createTrack=true) gets its own section right after its parent route.
   for (const rs of stats.routes) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', rs.name, 'section-title'));
     if (rs.kept) {
-      block.appendChild(elText('p', rs.inputRtepts + ' \u2192 ' + rs.outputRtepts + ' route points'
-        + (rs.denseRouteCreated ? ' (densified)' : ''), 'section-detail'));
+      block.appendChild(elText('p',
+        rs.inputRtepts + ' \u2192 ' + rs.outputRtepts + ' route points'
+        + (rs.denseRouteCreated ? ' (densified)' : ''),
+        'section-detail'));
+      appendExtensionList(block, rs.extensions);
     } else {
-      block.appendChild(elText('p', 'Original route removed', 'section-detail'));
-    }
-    if (rs.trackCreated) {
-      block.appendChild(elText('p', rs.trackTrkpts + ' track points (new track)', 'section-detail'));
-    }
-    if (rs.rumoExtensions?.length) {
-      block.appendChild(elText('p', 'Added Rumo/DMD: ' + rs.rumoExtensions.join(', '), 'section-detail'));
-    }
-    if (rs.garminExtensions?.length) {
-      block.appendChild(elText('p', 'Added Garmin: ' + rs.garminExtensions.join(', '), 'section-detail'));
+      block.appendChild(elText('p', 'Route removed', 'section-detail'));
     }
     outputBody.appendChild(block);
+
+    if (rs.trackCreated) {
+      const trackBlock = el('div', 'section-block');
+      trackBlock.appendChild(elText('div', rs.name + ' (new track)', 'section-title'));
+      trackBlock.appendChild(elText('p', rs.trackTrkpts + ' track points', 'section-detail'));
+      appendExtensionList(trackBlock, rs.trackExtensions);
+      outputBody.appendChild(trackBlock);
+    }
   }
 
-  // Track stats
+  // One section per input track.
   for (const ts of stats.tracks) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', ts.name, 'section-title'));
-    block.appendChild(elText('p', ts.kept ? ts.trkpts + ' track points' : 'Removed', 'section-detail'));
-    if (ts.rumoExtensions?.length) {
-      block.appendChild(elText('p', 'Added Rumo/DMD: ' + ts.rumoExtensions.join(', '), 'section-detail'));
-    }
-    if (ts.garminExtensions?.length) {
-      block.appendChild(elText('p', 'Added Garmin: ' + ts.garminExtensions.join(', '), 'section-detail'));
+    if (ts.kept) {
+      block.appendChild(elText('p', ts.trkpts + ' track points', 'section-detail'));
+      appendExtensionList(block, ts.extensions);
+    } else {
+      block.appendChild(elText('p', 'Track removed', 'section-detail'));
     }
     outputBody.appendChild(block);
   }
 
-  // Output routes/tracks/wpts from analysis
-  if (a.routes.length || a.tracks.length || a.waypoints.count
-      || stats.rumoWaypointTagsCount || stats.garminCategoriesCount
-      || stats.viaPointsPromoted || stats.namedRteptsPromoted) {
+  // One waypoints section.
+  const hasWpts = stats.outputWaypoints > 0
+    || stats.namedRteptsPromoted || stats.viaPointsPromoted
+    || stats.rumoWaypointTagsCount || stats.garminCategoriesCount
+    || stats.bounds;
+  if (hasWpts) {
     const block = el('div', 'section-block');
-    block.appendChild(elText('div', 'Summary', 'section-title'));
-    if (a.routes.length)
-      block.appendChild(elText('p', a.routes.length + ' route' + (a.routes.length === 1 ? '' : 's'), 'section-detail'));
-    if (a.tracks.length)
-      block.appendChild(elText('p', a.tracks.length + ' track' + (a.tracks.length === 1 ? '' : 's'), 'section-detail'));
-    if (a.waypoints.count)
-      block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
-    if (stats.namedRteptsPromoted) {
-      const n = stats.namedRteptsPromoted;
-      block.appendChild(elText('p', n + ' named route point' + (n !== 1 ? 's' : '') + ' promoted to waypoints', 'section-detail'));
-    }
-    if (stats.viaPointsPromoted) {
-      const n = stats.viaPointsPromoted;
-      block.appendChild(elText('p', n + ' Garmin via-point' + (n !== 1 ? 's' : '') + ' added as waypoints', 'section-detail'));
-    }
-    if (stats.rumoWaypointTagsCount) {
-      const n = stats.rumoWaypointTagsCount;
-      block.appendChild(elText('p', n + ' waypoint' + (n !== 1 ? 's' : '') + ' with Rumo/DMD tags added', 'section-detail'));
-    }
-    if (stats.garminCategoriesCount) {
-      const n = stats.garminCategoriesCount;
-      block.appendChild(elText('p', n + ' waypoint' + (n !== 1 ? 's' : '') + ' with Garmin categories added', 'section-detail'));
-    }
-    if (stats.bounds)
-      block.appendChild(elText('p',
-        fmtCoord(stats.bounds.minLat) + ',' + fmtCoord(stats.bounds.minLon) +
-        ' \u2192 ' + fmtCoord(stats.bounds.maxLat) + ',' + fmtCoord(stats.bounds.maxLon),
-        'section-detail'));
+    block.appendChild(elText('div', 'Waypoints', 'section-title'));
+    const n = stats.outputWaypoints;
+    block.appendChild(elText('p', n + ' waypoint' + (n === 1 ? '' : 's'), 'section-detail'));
+    if (stats.namedRteptsPromoted)
+      block.appendChild(elText('p', stats.namedRteptsPromoted + ' promoted from named route points', 'section-detail'));
+    if (stats.viaPointsPromoted)
+      block.appendChild(elText('p', stats.viaPointsPromoted + ' promoted from Garmin via-points', 'section-detail'));
+    if (stats.rumoWaypointTagsCount)
+      block.appendChild(elText('p', stats.rumoWaypointTagsCount + ' with Rumo/DMD tags added', 'section-detail'));
+    if (stats.garminCategoriesCount)
+      block.appendChild(elText('p', stats.garminCategoriesCount + ' with Garmin categories added', 'section-detail'));
+    appendExtensionList(block, stats.waypointExtensions);
+    if (stats.bounds) block.appendChild(elText('p', 'Bounds: ' + fmtBounds(stats.bounds), 'section-detail'));
     outputBody.appendChild(block);
   }
 }
@@ -552,16 +538,25 @@ function fmtBounds(b) {
        + ' \u2192 ' + fmtCoord(b.maxLat) + ',' + fmtCoord(b.maxLon);
 }
 
-// Show vendor-labelled extension counts, e.g. "3 Garmin extensions, 1 Rumo/DMD extension".
-function appendVendorBreakdown(block, extensions) {
+// Render one <p> per extension, grouped by vendor order, with the value summary
+// (e.g. "Garmin Route Point Extension (4550 shaping points)") where available.
+function appendExtensionList(block, extensions) {
   if (!extensions?.length) return;
-  const counts = { Garmin: 0, 'Rumo/DMD': 0, Other: 0 };
-  for (const e of extensions) counts[e.vendor ?? 'Other']++;
-  const parts = [];
-  for (const v of ['Garmin', 'Rumo/DMD', 'Other']) {
-    if (counts[v]) parts.push(counts[v] + ' ' + v + ' extension' + (counts[v] === 1 ? '' : 's'));
+  const ordered = [...extensions].sort((a, b) => {
+    const va = vendorOrder(a.vendor), vb = vendorOrder(b.vendor);
+    if (va !== vb) return va - vb;
+    return a.localName.localeCompare(b.localName);
+  });
+  for (const e of ordered) {
+    const text = e.vendor + ' ' + e.displayName + (e.summary ? ' (' + e.summary + ')' : '');
+    block.appendChild(elText('p', text, 'section-detail'));
   }
-  if (parts.length) block.appendChild(elText('p', parts.join(', '), 'section-detail'));
+}
+
+function vendorOrder(v) {
+  if (v === 'Garmin') return 0;
+  if (v === 'Rumo/DMD') return 1;
+  return 2;
 }
 
 function esc(s) {

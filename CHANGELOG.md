@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Section-based input/output info**: Input and output columns now render one section per route,
+  one section per track, and one section for waypoints — consistent across both columns. Each
+  section summarises only point counts (route points, shaping points, track points, waypoints)
+  and lists every extension in full. Extension lines include a short value where available, e.g.
+  `Garmin Display Color (Red)`, `Rumo/DMD Display Color (#FF0000)`,
+  `Garmin Route Point Extension (4550 shaping points)`, `Garmin Categories (Food, Lodging)`. The
+  old aggregate "vendor breakdown" and "Summary" blocks are gone.
+- **Output column no longer re-parses the converted GPX**: `convert()` now attaches classified
+  extensions to each `stats.routes[i]`, `stats.tracks[i]`, and `stats.waypointExtensions`, so the
+  UI renders directly from stats.
+
 ### Added
 - **Vendor-labelled UI**: Input, options, and output columns now explicitly label each extension
   and conversion as Garmin or Rumo/DMD so owners of either device family can tell at a glance

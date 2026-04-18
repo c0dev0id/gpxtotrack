@@ -134,8 +134,8 @@ export function convert(gpxString, options = {}) {
       denseRouteCreated: false,
       trackCreated: false,
       trackTrkpts: 0,
-      rumoExtensions: [],
-      garminExtensions: [],
+      extensions: [],
+      trackExtensions: [],
     };
 
     // Skip entirely if not kept and no derived outputs requested.
@@ -216,10 +216,10 @@ export function convert(gpxString, options = {}) {
           const exts = ensureExtensions(doc, trk);
           exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
           exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
-          routeStat.rumoExtensions.push('track color');
         }
       }
 
+      routeStat.trackExtensions = enumerateExtensions(collectTrackElements(trk)).map(classifyExtension);
       newTracks.push(trk);
     }
 
@@ -292,7 +292,6 @@ export function convert(gpxString, options = {}) {
           const exts = ensureExtensions(doc, newRte);
           exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:RouteExtension/DisplayColor "' + color + '" '));
           exts.appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
-          routeStat.rumoExtensions.push('color');
         }
       }
       if (convertToRumoShaping) {
@@ -303,7 +302,6 @@ export function convert(gpxString, options = {}) {
           const exts = ensureExtensions(doc, newRte);
           exts.appendChild(doc.createComment(' Rumo: ' + spCount + ' shaping point(s) translated from gpxx:RoutePointExtension/rpt '));
           exts.appendChild(rumoShaping);
-          routeStat.rumoExtensions.push('shaping points');
         }
       }
       if (convertRumoColorToGarmin) {
@@ -318,7 +316,6 @@ export function convert(gpxString, options = {}) {
             dc.textContent = garminName;
             rext.appendChild(dc);
             exts.appendChild(rext);
-            routeStat.garminExtensions.push('color');
           }
         }
       }
@@ -331,7 +328,6 @@ export function convert(gpxString, options = {}) {
             lon: parseFloat(rt.getAttribute('lon')),
           }));
           const partitions = assignShapingToRtepts(shapingPts, coords);
-          let attachedCount = 0;
           for (const [segIdx, pts] of partitions.entries()) {
             const parent = outRtepts[segIdx];
             const exts = ensureExtensions(doc, parent);
@@ -344,12 +340,11 @@ export function convert(gpxString, options = {}) {
               rpe.appendChild(rpt);
             }
             exts.appendChild(rpe);
-            attachedCount += pts.length;
           }
-          if (attachedCount) routeStat.garminExtensions.push('shaping points');
         }
       }
 
+      routeStat.extensions = enumerateExtensions(collectRouteElements(newRte)).map(classifyExtension);
       newRoutes.push(newRte);
     } else if (addRteptsToWaypoints || addViaPointsToWaypoints) {
       // Route not kept, but waypoints requested.
@@ -384,8 +379,7 @@ export function convert(gpxString, options = {}) {
     const trkName = firstChildText(trk, GPX_NS, 'name') || ('Track ' + (ti + 1));
     const trkpts = trk.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
 
-    const trackRumoExts = [];
-    const trackGarminExts = [];
+    const trackStat = { name: trkName, kept: keep, trkpts, extensions: [] };
     if (keep) {
       const color = convertToRumoColor ? readTrackDisplayColor(trk) : null;
       const cloned = trk.cloneNode(true);
@@ -400,7 +394,6 @@ export function convert(gpxString, options = {}) {
         const exts = ensureExtensions(doc, cloned);
         exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
         exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
-        trackRumoExts.push('color');
       }
       if (convertRumoColorToGarmin) {
         const rumoColor = readRumoTrackColor(trk);
@@ -414,14 +407,13 @@ export function convert(gpxString, options = {}) {
             dc.textContent = garminName;
             text.appendChild(dc);
             exts.appendChild(text);
-            trackGarminExts.push('color');
           }
         }
       }
+      trackStat.extensions = enumerateExtensions(collectTrackElements(cloned)).map(classifyExtension);
       newTracks.push(cloned);
     }
-
-    stats.tracks.push({ name: trkName, kept: keep, trkpts, rumoExtensions: trackRumoExts, garminExtensions: trackGarminExts });
+    stats.tracks.push(trackStat);
   }
 
   removeEmptyExtensions(gpx);
@@ -437,6 +429,9 @@ export function convert(gpxString, options = {}) {
   scrubNamespaceDeclarations(gpx);
 
   stats.bounds = computeBounds(gpx);
+  stats.waypointExtensions = enumerateExtensions(
+    Array.from(childrenByNS(gpx, GPX_NS, 'wpt'))
+  ).map(classifyExtension);
 
   prettyPrint(gpx, 0);
 
@@ -590,8 +585,16 @@ function camelToLabel(s) {
 }
 
 function enumerateExtensions(elements) {
-  const seen = new Set();
-  const result = [];
+  const seen = new Map();
+  const record = (node) => {
+    const key = (node.namespaceURI || '') + '|' + node.localName;
+    let entry = seen.get(key);
+    if (!entry) {
+      entry = { ns: node.namespaceURI || '', localName: node.localName, instances: [] };
+      seen.set(key, entry);
+    }
+    entry.instances.push(node);
+  };
   for (const el of elements) {
     const ext = firstChildElNS(el, GPX_NS, 'extensions');
     if (!ext) continue;
@@ -599,32 +602,97 @@ function enumerateExtensions(elements) {
       if (c.nodeType !== 1) continue;
       const wrapperKey = (c.namespaceURI || '') + '|' + c.localName;
       if (EXTENSION_WRAPPERS.has(wrapperKey)) {
-        // Unwrap: enumerate children of the wrapper
         for (let gc = c.firstChild; gc; gc = gc.nextSibling) {
-          if (gc.nodeType !== 1) continue;
-          const key = (gc.namespaceURI || '') + '|' + gc.localName;
-          if (!seen.has(key)) {
-            seen.add(key);
-            result.push({ ns: gc.namespaceURI || '', localName: gc.localName });
-          }
+          if (gc.nodeType === 1) record(gc);
         }
       } else {
-        const key = (c.namespaceURI || '') + '|' + c.localName;
-        if (!seen.has(key)) {
-          seen.add(key);
-          result.push({ ns: c.namespaceURI || '', localName: c.localName });
-        }
+        record(c);
       }
     }
   }
-  return result;
+  return Array.from(seen.values());
 }
 
-function classifyExtension(ext) {
-  const prefix = nsPrefix(ext.ns);
-  const label = prefix ? prefix + ': ' + camelToLabel(ext.localName) : camelToLabel(ext.localName);
-  const vendor = extensionVendor(ext.ns);
-  return { ns: ext.ns, localName: ext.localName, label, vendor, defaultAction: 'remove' };
+function classifyExtension(entry) {
+  const { ns, localName } = entry;
+  const prefix = nsPrefix(ns);
+  const displayName = camelToLabel(localName);
+  const label = prefix ? prefix + ': ' + displayName : displayName;
+  const vendor = extensionVendor(ns);
+  const summary = summarizeExtension(entry);
+  return { ns, localName, label, vendor, displayName, summary, defaultAction: 'remove' };
+}
+
+// Derive a short, human-facing value summary for the extension based on its
+// DOM instances (e.g. "Red" for DisplayColor, "4550 shaping points" for
+// RoutePointExtension, "Food, Lodging" for Categories). Returns '' when there's
+// no short way to summarise — callers should then just render the name.
+function summarizeExtension(entry) {
+  const { ns, localName, instances } = entry;
+  if (!instances || !instances.length) return '';
+
+  if (localName === 'DisplayColor' && (ns === GPXX_NS || ns === RUMO_NS)) {
+    return (instances[0].textContent || '').trim();
+  }
+
+  if (ns === GPXX_NS && localName === 'RoutePointExtension') {
+    let n = 0;
+    for (const inst of instances) n += childrenByNS(inst, GPXX_NS, 'rpt').length;
+    return n ? n + ' shaping point' + (n === 1 ? '' : 's') : '';
+  }
+
+  if (ns === RUMO_NS && localName === 'ShapingPoints') {
+    let n = 0;
+    for (const inst of instances) n += childrenByNS(inst, RUMO_NS, 'ShapingPoint').length;
+    return n ? n + ' shaping point' + (n === 1 ? '' : 's') : '';
+  }
+
+  if (ns === GPXX_NS && localName === 'Categories') {
+    const tags = new Set();
+    for (const inst of instances) {
+      for (const c of childrenByNS(inst, GPXX_NS, 'Category')) {
+        const v = (c.textContent || '').trim();
+        if (v) tags.add(v);
+      }
+    }
+    return tags.size ? summarizeList(Array.from(tags), 4) : '';
+  }
+
+  if (ns === RUMO_NS && localName === 'WaypointTags') {
+    const tags = new Set();
+    for (const inst of instances) {
+      for (const t of (inst.textContent || '').split(',')) {
+        const v = t.trim();
+        if (v) tags.add(v);
+      }
+    }
+    return tags.size ? summarizeList(Array.from(tags), 4) : '';
+  }
+
+  if (ns === TRP_NS && localName === 'ViaPoint') {
+    return instances.length + ' point' + (instances.length === 1 ? '' : 's');
+  }
+
+  if (instances.length > 1) return instances.length + ' occurrences';
+  return '';
+}
+
+function summarizeList(arr, max) {
+  if (arr.length <= max) return arr.join(', ');
+  return arr.slice(0, max).join(', ') + ', \u2026 (+' + (arr.length - max) + ' more)';
+}
+
+function collectRouteElements(rte) {
+  return [rte, ...childrenByNS(rte, GPX_NS, 'rtept')];
+}
+
+function collectTrackElements(trk) {
+  const out = [trk];
+  for (const seg of childrenByNS(trk, GPX_NS, 'trkseg')) {
+    out.push(seg);
+    for (const pt of childrenByNS(seg, GPX_NS, 'trkpt')) out.push(pt);
+  }
+  return out;
 }
 
 function nsPrefix(ns) {
@@ -704,8 +772,7 @@ export function analyzeInput(gpxString, options = {}) {
     }
 
     // Enumerate extensions from all rtepts + route-level
-    const allElements = [rte, ...rteptEls];
-    const extensions = enumerateExtensions(allElements).map(classifyExtension);
+    const extensions = enumerateExtensions(collectRouteElements(rte)).map(classifyExtension);
 
     const hasRumoColor   = readRumoRouteColor(rte) !== null;
     const hasRumoShaping = readRumoShapingPoints(rte).length > 0;
@@ -730,14 +797,7 @@ export function analyzeInput(gpxString, options = {}) {
     const trkptCount = trkpts.length;
 
     // Enumerate extensions from all trkpts + trkseg + trk-level
-    const allElements = [trk];
-    for (const seg of childrenByNS(trk, GPX_NS, 'trkseg')) {
-      allElements.push(seg);
-      for (const pt of childrenByNS(seg, GPX_NS, 'trkpt')) {
-        allElements.push(pt);
-      }
-    }
-    const extensions = enumerateExtensions(allElements).map(classifyExtension);
+    const extensions = enumerateExtensions(collectTrackElements(trk)).map(classifyExtension);
     const hasRumoColor = readRumoTrackColor(trk) !== null;
 
     return { index, name, trkptCount, hasRumoColor, extensions };
