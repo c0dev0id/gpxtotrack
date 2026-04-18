@@ -375,11 +375,13 @@ export function convert(gpxString, options = {}) {
     const opts = trackOpts[ti] || {};
     const keep = opts.keep !== false;
     const extDecisions = opts.extensions || {};
-    const convertToRumoColor = !!opts.convertToRumoColor;
+    const convertToRumoColor       = !!opts.convertToRumoColor;
+    const convertRumoColorToGarmin = !!opts.convertRumoColorToGarmin;
     const trkName = firstChildText(trk, GPX_NS, 'name') || ('Track ' + (ti + 1));
     const trkpts = trk.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
 
     const trackRumoExts = [];
+    const trackGarminExts = [];
     if (keep) {
       const color = convertToRumoColor ? readTrackDisplayColor(trk) : null;
       const cloned = trk.cloneNode(true);
@@ -396,10 +398,26 @@ export function convert(gpxString, options = {}) {
         exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
         trackRumoExts.push('color');
       }
+      if (convertRumoColorToGarmin) {
+        const rumoColor = readRumoTrackColor(trk);
+        if (rumoColor) {
+          const garminName = nearestGarminName(rumoColor);
+          if (garminName) {
+            const exts = ensureExtensions(doc, cloned);
+            exts.appendChild(doc.createComment(' Garmin: color "' + garminName + '" matched from rumo:TrackExtension/DisplayColor "' + rumoColor + '" '));
+            const text = doc.createElementNS(GPXX_NS, 'gpxx:TrackExtension');
+            const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
+            dc.textContent = garminName;
+            text.appendChild(dc);
+            exts.appendChild(text);
+            trackGarminExts.push('color');
+          }
+        }
+      }
       newTracks.push(cloned);
     }
 
-    stats.tracks.push({ name: trkName, kept: keep, trkpts, rumoExtensions: trackRumoExts });
+    stats.tracks.push({ name: trkName, kept: keep, trkpts, rumoExtensions: trackRumoExts, garminExtensions: trackGarminExts });
   }
 
   removeEmptyExtensions(gpx);
@@ -601,7 +619,8 @@ function enumerateExtensions(elements) {
 function classifyExtension(ext) {
   const prefix = nsPrefix(ext.ns);
   const label = prefix ? prefix + ': ' + camelToLabel(ext.localName) : camelToLabel(ext.localName);
-  return { ns: ext.ns, localName: ext.localName, label, defaultAction: 'remove' };
+  const vendor = extensionVendor(ext.ns);
+  return { ns: ext.ns, localName: ext.localName, label, vendor, defaultAction: 'remove' };
 }
 
 function nsPrefix(ns) {
@@ -609,9 +628,18 @@ function nsPrefix(ns) {
   if (ns === TRP_NS)   return 'trp';
   if (ns === CTX_NS)   return 'ctx';
   if (ns === WPTX1_NS) return 'wptx1';
+  if (ns === RUMO_NS)  return 'rumo';
   // For unknown namespaces, extract a short prefix from the URL
   const m = ns.match(/\/([^/]+?)(?:\/v\d+)?$/);
   return m ? m[1] : '';
+}
+
+// Classify a namespace URI into a human-facing vendor label. Used by the UI
+// to group extensions and make the Garmin vs Rumo/DMD distinction explicit.
+export function extensionVendor(ns) {
+  if (ns === RUMO_NS) return 'Rumo/DMD';
+  if (ns && ns.includes('garmin.com')) return 'Garmin';
+  return 'Other';
 }
 
 /**

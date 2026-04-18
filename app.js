@@ -87,13 +87,14 @@ function renderInputColumn(a) {
     block.appendChild(elText('div', r.name, 'section-title'));
     block.appendChild(elText('p', r.rteptCount + ' route points', 'section-detail'));
     if (r.hasShapingPoints) {
-      block.appendChild(elText('p', r.shapingPointCount + ' shaping points', 'section-detail'));
+      block.appendChild(elText('p', r.shapingPointCount + ' Garmin shaping points', 'section-detail'));
     }
-    if (r.isTrip) block.appendChild(elText('p', 'Trip route', 'section-detail'));
-    if (r.isRoutePointExt) block.appendChild(elText('p', 'RoutePoint Extension format', 'section-detail'));
-    if (r.extensions.length) {
-      block.appendChild(elText('p', r.extensions.length + ' extension' + (r.extensions.length === 1 ? '' : 's'), 'section-detail'));
+    if (r.hasRumoShaping) {
+      block.appendChild(elText('p', 'Rumo/DMD shaping points present', 'section-detail'));
     }
+    if (r.isTrip) block.appendChild(elText('p', 'Garmin trip route', 'section-detail'));
+    if (r.isRoutePointExt) block.appendChild(elText('p', 'Garmin RoutePoint Extension format', 'section-detail'));
+    appendVendorBreakdown(block, r.extensions);
     inputBody.appendChild(block);
   }
   for (const t of a.tracks) {
@@ -101,15 +102,14 @@ function renderInputColumn(a) {
     block.dataset.trackIndex = t.index;
     block.appendChild(elText('div', t.name, 'section-title'));
     block.appendChild(elText('p', t.trkptCount + ' track points', 'section-detail'));
-    if (t.extensions.length) {
-      block.appendChild(elText('p', t.extensions.length + ' extension' + (t.extensions.length === 1 ? '' : 's'), 'section-detail'));
-    }
+    appendVendorBreakdown(block, t.extensions);
     inputBody.appendChild(block);
   }
   if (a.waypoints.count > 0) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', 'Waypoints', 'section-title'));
     block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
+    appendVendorBreakdown(block, a.waypoints.extensions);
     inputBody.appendChild(block);
   }
   if (a.bounds) {
@@ -160,21 +160,25 @@ function renderOptionsColumn(a) {
       group.appendChild(makeToleranceSlider('route-tol-' + r.index));
       group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add all route points to waypoints', false, false));
       if (r.hasViaPoints) {
-        group.appendChild(makeCheckbox('route-viawpts-' + r.index, 'Add via-points to waypoints list', true, false));
+        group.appendChild(makeCheckbox('route-viawpts-' + r.index, 'Add Garmin via-points to waypoints list', true, false));
       }
-      group.appendChild(makeCheckbox('route-rumoshaping-' + r.index, 'Translate shaping points to Rumo format', true, false));
+      group.appendChild(makeCheckbox('route-rumoshaping-' + r.index, 'Translate Garmin shaping points to Rumo/DMD format', true, false));
     }
 
     if (r.extensions.some(e => e.localName === 'DisplayColor' && e.ns === GPXX_NS)) {
-      group.appendChild(makeCheckbox('route-rumocolor-' + r.index, 'Convert Garmin color to Rumo format', true, false));
+      group.appendChild(makeCheckbox('route-rumocolor-' + r.index, 'Convert Garmin color to Rumo/DMD format', true, false));
+    }
+
+    if (r.hasRumoShaping) {
+      group.appendChild(makeCheckbox('route-garminshaping-' + r.index, 'Translate Rumo/DMD shaping points to Garmin format', true, false));
+    }
+    if (r.hasRumoColor) {
+      group.appendChild(makeCheckbox('route-garmincolor-' + r.index, 'Convert Rumo/DMD color to Garmin format', true, false));
     }
 
     // Extensions
     if (r.extensions.length) {
-      group.appendChild(elText('div', 'Extensions', 'ext-section-label'));
-      for (const ext of r.extensions) {
-        group.appendChild(makeExtRow('rext-' + r.index, ext));
-      }
+      appendExtensionGroups(group, r.extensions, 'rext-' + r.index);
     }
 
     optionsBody.appendChild(group);
@@ -188,27 +192,30 @@ function renderOptionsColumn(a) {
     group.appendChild(makeCheckbox('track-keep-' + t.index, 'Keep track', true, false));
 
     if (t.extensions.some(e => e.localName === 'DisplayColor' && e.ns === GPXX_NS)) {
-      group.appendChild(makeCheckbox('track-rumocolor-' + t.index, 'Convert Garmin color to Rumo format', true, false));
+      group.appendChild(makeCheckbox('track-rumocolor-' + t.index, 'Convert Garmin color to Rumo/DMD format', true, false));
+    }
+    if (t.hasRumoColor) {
+      group.appendChild(makeCheckbox('track-garmincolor-' + t.index, 'Convert Rumo/DMD color to Garmin format', true, false));
     }
 
     if (t.extensions.length) {
-      group.appendChild(elText('div', 'Extensions', 'ext-section-label'));
-      for (const ext of t.extensions) {
-        group.appendChild(makeExtRow('text-' + t.index, ext));
-      }
+      appendExtensionGroups(group, t.extensions, 'text-' + t.index);
     }
 
     optionsBody.appendChild(group);
   }
 
-  if (a.waypoints.extensions.length) {
+  if (a.waypoints.extensions.length || a.waypoints.hasRumoWaypointTags) {
     const group = el('div', 'opt-group');
     group.appendChild(elText('div', 'Waypoint extensions', 'opt-group-title'));
     if (a.waypoints.extensions.some(e => e.localName === 'Categories' && e.ns === GPXX_NS)) {
-      group.appendChild(makeCheckbox('wext-rumo-categories', 'Convert Garmin categories to Rumo waypoint tags', false, false));
+      group.appendChild(makeCheckbox('wext-rumo-categories', 'Convert Garmin categories to Rumo/DMD waypoint tags', false, false));
     }
-    for (const ext of a.waypoints.extensions) {
-      group.appendChild(makeExtRow('wext', ext));
+    if (a.waypoints.hasRumoWaypointTags) {
+      group.appendChild(makeCheckbox('wext-garmin-categories', 'Convert Rumo/DMD waypoint tags to Garmin categories', true, false));
+    }
+    if (a.waypoints.extensions.length) {
+      appendExtensionGroups(group, a.waypoints.extensions, 'wext');
     }
     optionsBody.appendChild(group);
   }
@@ -240,8 +247,10 @@ function gatherOptions() {
 
     const addViaPointsToWaypoints = checkboxVal('route-viawpts-' + r.index);
 
-    const convertToRumoColor   = checkboxVal('route-rumocolor-' + r.index);
-    const convertToRumoShaping = checkboxVal('route-rumoshaping-' + r.index);
+    const convertToRumoColor         = checkboxVal('route-rumocolor-' + r.index);
+    const convertToRumoShaping       = checkboxVal('route-rumoshaping-' + r.index);
+    const convertRumoColorToGarmin   = checkboxVal('route-garmincolor-' + r.index);
+    const convertRumoShapingToGarmin = checkboxVal('route-garminshaping-' + r.index);
 
     const extensions = {};
     for (const ext of r.extensions) {
@@ -250,7 +259,12 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    routes.push({ addRteptsToWaypoints, addViaPointsToWaypoints, convertToRumoColor, convertToRumoShaping, createDenseRoute, toleranceM, createTrack, extensions });
+    routes.push({
+      addRteptsToWaypoints, addViaPointsToWaypoints,
+      convertToRumoColor, convertToRumoShaping,
+      convertRumoColorToGarmin, convertRumoShapingToGarmin,
+      createDenseRoute, toleranceM, createTrack, extensions,
+    });
   }
 
   const tracks = [];
@@ -264,8 +278,9 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    const convertToRumoColor = checkboxVal('track-rumocolor-' + t.index);
-    tracks.push({ keep, convertToRumoColor, extensions });
+    const convertToRumoColor       = checkboxVal('track-rumocolor-' + t.index);
+    const convertRumoColorToGarmin = checkboxVal('track-garmincolor-' + t.index);
+    tracks.push({ keep, convertToRumoColor, convertRumoColorToGarmin, extensions });
   }
 
   const waypointExtensions = {};
@@ -278,7 +293,8 @@ function gatherOptions() {
   }
 
   const convertCategoriesToRumoTags = checkboxVal('wext-rumo-categories');
-  return { routes, tracks, waypointExtensions, convertCategoriesToRumoTags };
+  const convertRumoTagsToCategories = checkboxVal('wext-garmin-categories');
+  return { routes, tracks, waypointExtensions, convertCategoriesToRumoTags, convertRumoTagsToCategories };
 }
 
 function applyRouteRemoved(groupEl, removed) {
@@ -304,8 +320,10 @@ function syncOptionsFromFirst() {
       wptsVal        = checkboxVal('route-wpts-' + first.index);
       rumoShapingVal = checkboxVal('route-rumoshaping-' + first.index);
     }
-    const viaWptsVal   = checkboxVal('route-viawpts-' + first.index);
-    const rumoColorVal = checkboxVal('route-rumocolor-' + first.index);
+    const viaWptsVal       = checkboxVal('route-viawpts-' + first.index);
+    const rumoColorVal     = checkboxVal('route-rumocolor-' + first.index);
+    const garminColorVal   = checkboxVal('route-garmincolor-' + first.index);
+    const garminShapingVal = checkboxVal('route-garminshaping-' + first.index);
     const extVals = {};
     for (const ext of first.extensions) {
       const key = ext.ns + '|' + ext.localName;
@@ -331,6 +349,8 @@ function syncOptionsFromFirst() {
       }
       setCheckboxVal('route-viawpts-' + r.index, viaWptsVal);
       setCheckboxVal('route-rumocolor-' + r.index, rumoColorVal);
+      if (r.hasRumoColor)   setCheckboxVal('route-garmincolor-' + r.index, garminColorVal);
+      if (r.hasRumoShaping) setCheckboxVal('route-garminshaping-' + r.index, garminShapingVal);
       for (const ext of r.extensions) {
         const key = ext.ns + '|' + ext.localName;
         if (extVals[key] != null) setRadioVal('rext-' + r.index + '-' + key, extVals[key]);
@@ -341,7 +361,8 @@ function syncOptionsFromFirst() {
   if (analysis.tracks.length > 1) {
     const first = analysis.tracks[0];
     const keepVal = checkboxVal('track-keep-' + first.index);
-    const trackRumoColorVal = checkboxVal('track-rumocolor-' + first.index);
+    const trackRumoColorVal   = checkboxVal('track-rumocolor-' + first.index);
+    const trackGarminColorVal = checkboxVal('track-garmincolor-' + first.index);
     const extVals = {};
     for (const ext of first.extensions) {
       const key = ext.ns + '|' + ext.localName;
@@ -352,6 +373,7 @@ function syncOptionsFromFirst() {
       const t = analysis.tracks[i];
       setCheckboxVal('track-keep-' + t.index, keepVal);
       setCheckboxVal('track-rumocolor-' + t.index, trackRumoColorVal);
+      if (t.hasRumoColor) setCheckboxVal('track-garmincolor-' + t.index, trackGarminColorVal);
       for (const ext of t.extensions) {
         const key = ext.ns + '|' + ext.localName;
         if (extVals[key] != null) setRadioVal('text-' + t.index + '-' + key, extVals[key]);
@@ -416,7 +438,10 @@ function renderOutputColumn(a, stats) {
       block.appendChild(elText('p', rs.trackTrkpts + ' track points (new track)', 'section-detail'));
     }
     if (rs.rumoExtensions?.length) {
-      block.appendChild(elText('p', 'Rumo: ' + rs.rumoExtensions.join(', '), 'section-detail'));
+      block.appendChild(elText('p', 'Added Rumo/DMD: ' + rs.rumoExtensions.join(', '), 'section-detail'));
+    }
+    if (rs.garminExtensions?.length) {
+      block.appendChild(elText('p', 'Added Garmin: ' + rs.garminExtensions.join(', '), 'section-detail'));
     }
     outputBody.appendChild(block);
   }
@@ -427,14 +452,17 @@ function renderOutputColumn(a, stats) {
     block.appendChild(elText('div', ts.name, 'section-title'));
     block.appendChild(elText('p', ts.kept ? ts.trkpts + ' track points' : 'Removed', 'section-detail'));
     if (ts.rumoExtensions?.length) {
-      block.appendChild(elText('p', 'Rumo: ' + ts.rumoExtensions.join(', '), 'section-detail'));
+      block.appendChild(elText('p', 'Added Rumo/DMD: ' + ts.rumoExtensions.join(', '), 'section-detail'));
+    }
+    if (ts.garminExtensions?.length) {
+      block.appendChild(elText('p', 'Added Garmin: ' + ts.garminExtensions.join(', '), 'section-detail'));
     }
     outputBody.appendChild(block);
   }
 
   // Output routes/tracks/wpts from analysis
   if (a.routes.length || a.tracks.length || a.waypoints.count
-      || stats.rumoWaypointTagsCount || stats.viaPointsPromoted) {
+      || stats.rumoWaypointTagsCount || stats.garminCategoriesCount || stats.viaPointsPromoted) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', 'Summary', 'section-title'));
     if (a.routes.length)
@@ -445,11 +473,15 @@ function renderOutputColumn(a, stats) {
       block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
     if (stats.viaPointsPromoted) {
       const n = stats.viaPointsPromoted;
-      block.appendChild(elText('p', n + ' via-point' + (n !== 1 ? 's' : '') + ' added as waypoints', 'section-detail'));
+      block.appendChild(elText('p', n + ' Garmin via-point' + (n !== 1 ? 's' : '') + ' added as waypoints', 'section-detail'));
     }
     if (stats.rumoWaypointTagsCount) {
       const n = stats.rumoWaypointTagsCount;
-      block.appendChild(elText('p', n + ' waypoint' + (n !== 1 ? 's' : '') + ' with Rumo tags', 'section-detail'));
+      block.appendChild(elText('p', n + ' waypoint' + (n !== 1 ? 's' : '') + ' with Rumo/DMD tags added', 'section-detail'));
+    }
+    if (stats.garminCategoriesCount) {
+      const n = stats.garminCategoriesCount;
+      block.appendChild(elText('p', n + ' waypoint' + (n !== 1 ? 's' : '') + ' with Garmin categories added', 'section-detail'));
     }
     if (stats.bounds)
       block.appendChild(elText('p',
@@ -516,6 +548,18 @@ function formatTolerance(m) {
 }
 
 function fmtCoord(n) { return n.toFixed(5); }
+
+// Show vendor-labelled extension counts, e.g. "3 Garmin extensions, 1 Rumo/DMD extension".
+function appendVendorBreakdown(block, extensions) {
+  if (!extensions?.length) return;
+  const counts = { Garmin: 0, 'Rumo/DMD': 0, Other: 0 };
+  for (const e of extensions) counts[e.vendor ?? 'Other']++;
+  const parts = [];
+  for (const v of ['Garmin', 'Rumo/DMD', 'Other']) {
+    if (counts[v]) parts.push(counts[v] + ' ' + v + ' extension' + (counts[v] === 1 ? '' : 's'));
+  }
+  if (parts.length) block.appendChild(elText('p', parts.join(', '), 'section-detail'));
+}
 
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -600,6 +644,21 @@ function makeToleranceSlider(id) {
   row.appendChild(range);
   row.appendChild(output);
   return row;
+}
+
+// Render extension keep/remove rows grouped under vendor subheaders
+// (Garmin / Rumo/DMD / Other) so users can tell at a glance which extensions
+// belong to which device ecosystem.
+function appendExtensionGroups(parent, extensions, prefix) {
+  const buckets = { Garmin: [], 'Rumo/DMD': [], Other: [] };
+  for (const ext of extensions) (buckets[ext.vendor] || buckets.Other).push(ext);
+  for (const vendor of ['Garmin', 'Rumo/DMD', 'Other']) {
+    if (!buckets[vendor].length) continue;
+    parent.appendChild(elText('div', vendor + ' extensions', 'ext-section-label'));
+    for (const ext of buckets[vendor]) {
+      parent.appendChild(makeExtRow(prefix, ext));
+    }
+  }
 }
 
 function makeExtRow(prefix, ext) {

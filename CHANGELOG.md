@@ -6,11 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Vendor-labelled UI**: Input, options, and output columns now explicitly label each extension
+  and conversion as Garmin or Rumo/DMD so owners of either device family can tell at a glance
+  what belongs to which ecosystem. The extension keep/remove list is grouped under
+  "Garmin extensions" / "Rumo/DMD extensions" / "Other extensions" subheaders.
+- **Reverse Rumo/DMD → Garmin conversion in the UI**: Checkboxes for "Convert Rumo/DMD color to
+  Garmin format", "Translate Rumo/DMD shaping points to Garmin format", and "Convert Rumo/DMD
+  waypoint tags to Garmin categories" appear whenever the source data is present. The library
+  already supported this; the UI options are new.
+
 ### Changed
-- **Default options tuned for typical use**: Rumo conversions (color, shaping points, via-point
-  promotion) now default to on when their source data is present. All extensions default to
-  remove. "Create track from shaping points" defaults to on only when the input has no existing
-  track. "Create dense route" now defaults to off.
+- **Default options tuned for typical use**: Rumo/DMD conversions (color, shaping points,
+  via-point promotion) now default to on when their source data is present. All extensions
+  default to remove. "Create track from shaping points" defaults to on only when the input has
+  no existing track. "Create dense route" now defaults to off.
 - **Tolerance slider range**: now spans 250 m to 10 km (previously 10 m to 1 km). Default is 2 km
   (previously 250 m). Stops: 250 / 500 / 750 / 1000 / 2000 / 3000 / 5000 / 7500 / 10000 m.
 
@@ -19,8 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   readability. Mixed-content elements (e.g. `<name>`) are left untouched.
 - **Section separator comments**: `<!-- Waypoints -->`, `<!-- Routes -->`, and `<!-- Tracks -->`
   comments are inserted before each non-empty section in the output GPX.
-- **Extension conversion comments**: Each Rumo extension element is preceded by an XML comment
-  explaining its origin (e.g. `<!-- Rumo: color converted from gpxx:RouteExtension/DisplayColor "Red" -->`).
+- **Extension conversion comments**: Each Rumo/DMD extension element is preceded by an XML
+  comment explaining its origin
+  (e.g. `<!-- Rumo: color converted from gpxx:RouteExtension/DisplayColor "Red" -->`).
 
 ### Added
 - **Per-route/track control**: Each route and track in the file gets individual keep/remove,
