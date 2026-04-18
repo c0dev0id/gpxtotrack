@@ -105,20 +105,13 @@ function renderInputColumn(a) {
     appendVendorBreakdown(block, t.extensions);
     inputBody.appendChild(block);
   }
-  if (a.waypoints.count > 0) {
+  if (a.waypoints.count > 0 || a.bounds) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', 'Waypoints', 'section-title'));
-    block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
+    const n = a.waypoints.count;
+    block.appendChild(elText('p', n + ' waypoint' + (n === 1 ? '' : 's'), 'section-detail'));
     appendVendorBreakdown(block, a.waypoints.extensions);
-    inputBody.appendChild(block);
-  }
-  if (a.bounds) {
-    const block = el('div', 'section-block');
-    block.appendChild(elText('div', 'Bounds', 'section-title'));
-    block.appendChild(elText('p',
-      fmtCoord(a.bounds.minLat) + ',' + fmtCoord(a.bounds.minLon) +
-      ' \u2192 ' + fmtCoord(a.bounds.maxLat) + ',' + fmtCoord(a.bounds.maxLon),
-      'section-detail'));
+    if (a.bounds) block.appendChild(elText('p', 'Bounds: ' + fmtBounds(a.bounds), 'section-detail'));
     inputBody.appendChild(block);
   }
 }
@@ -553,6 +546,11 @@ function formatTolerance(m) {
 }
 
 function fmtCoord(n) { return n.toFixed(5); }
+
+function fmtBounds(b) {
+  return fmtCoord(b.minLat) + ',' + fmtCoord(b.minLon)
+       + ' \u2192 ' + fmtCoord(b.maxLat) + ',' + fmtCoord(b.maxLon);
+}
 
 // Show vendor-labelled extension counts, e.g. "3 Garmin extensions, 1 Rumo/DMD extension".
 function appendVendorBreakdown(block, extensions) {
