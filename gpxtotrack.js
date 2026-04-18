@@ -65,6 +65,7 @@ export function convert(gpxString, options = {}) {
   const routeOpts = options.routes || [];
   const trackOpts = options.tracks || [];
   const wptExtDecisions = options.waypointExtensions || {};
+  const convertCategoriesToRumoTags = !!options.convertCategoriesToRumoTags;
 
   const inputRtes = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
   const inputTrks = Array.from(childrenByNS(gpx, GPX_NS, 'trk'));
@@ -73,10 +74,10 @@ export function convert(gpxString, options = {}) {
   for (const rte of inputRtes) if (rte.parentNode) rte.parentNode.removeChild(rte);
   for (const trk of inputTrks) if (trk.parentNode) trk.parentNode.removeChild(trk);
 
-  // Auto-convert wpt extension data (address → desc, ctx:CreationTime → time)
-  // before any extension filtering so the data isn't lost.
+  // Auto-convert wpt extension data before any extension filtering.
   for (const wpt of childrenByNS(gpx, GPX_NS, 'wpt')) {
     convertWptExtensionData(wpt, doc);
+    if (convertCategoriesToRumoTags) convertGarminCategoriesToRumoTags(wpt, doc);
   }
 
   // Apply waypoint extension decisions to existing waypoints.
@@ -787,6 +788,21 @@ function buildRumoShapingExt(doc, rteptEls) {
   const rext = doc.createElementNS(RUMO_NS, 'rumo:RouteExtension');
   rext.appendChild(shaping);
   return rext;
+}
+
+function convertGarminCategoriesToRumoTags(wpt, doc) {
+  const ext    = firstChildElNS(wpt, GPX_NS, 'extensions');
+  const wptExt = firstChildElNS(ext, GPXX_NS, 'WaypointExtension');
+  const cats   = firstChildElNS(wptExt, GPXX_NS, 'Categories');
+  if (!cats) return;
+  const tags = childrenByNS(cats, GPXX_NS, 'Category')
+    .map(c => c.textContent.trim()).filter(Boolean);
+  if (!tags.length) return;
+  const rumoWptExt = doc.createElementNS(RUMO_NS, 'rumo:WaypointExtension');
+  const rumoTags   = doc.createElementNS(RUMO_NS, 'rumo:WaypointTags');
+  rumoTags.textContent = tags.join(',');
+  rumoWptExt.appendChild(rumoTags);
+  ensureExtensions(doc, wpt).appendChild(rumoWptExt);
 }
 
 /**

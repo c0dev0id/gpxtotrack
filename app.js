@@ -204,6 +204,9 @@ function renderOptionsColumn(a) {
   if (a.waypoints.extensions.length) {
     const group = el('div', 'opt-group');
     group.appendChild(elText('div', 'Waypoint extensions', 'opt-group-title'));
+    if (a.waypoints.extensions.some(e => e.localName === 'Categories' && e.ns === GPXX_NS)) {
+      group.appendChild(makeCheckbox('wext-rumo-categories', 'Convert Garmin categories to Rumo waypoint tags', false, false));
+    }
     for (const ext of a.waypoints.extensions) {
       group.appendChild(makeExtRow('wext', ext));
     }
@@ -274,7 +277,8 @@ function gatherOptions() {
     }
   }
 
-  return { routes, tracks, waypointExtensions };
+  const convertCategoriesToRumoTags = checkboxVal('wext-rumo-categories');
+  return { routes, tracks, waypointExtensions, convertCategoriesToRumoTags };
 }
 
 function applyRouteRemoved(groupEl, removed) {
