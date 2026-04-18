@@ -5,12 +5,13 @@
 // Pure function: no DOM side effects, runs in any environment that provides
 // DOMParser and XMLSerializer.
 
-export const GPX_NS  = 'http://www.topografix.com/GPX/1/1';
-export const GPXX_NS = 'http://www.garmin.com/xmlschemas/GpxExtensions/v3';
+export const GPX_NS   = 'http://www.topografix.com/GPX/1/1';
+export const GPXX_NS  = 'http://www.garmin.com/xmlschemas/GpxExtensions/v3';
 export const XSI_NS   = 'http://www.w3.org/2001/XMLSchema-instance';
 export const TRP_NS   = 'http://www.garmin.com/xmlschemas/TripExtensions/v1';
 export const CTX_NS   = 'http://www.garmin.com/xmlschemas/CreationTimeExtension/v1';
 export const WPTX1_NS = 'http://www.garmin.com/xmlschemas/WaypointExtension/v1';
+export const RUMO_NS  = 'https://www.rumoadventures.com/xmlschemas/GpxExtensions/v1';
 
 // Namespaces whose elements are always stripped from the output (no user choice).
 const DROP_NAMESPACES = new Set([
@@ -30,7 +31,7 @@ const DROP_NAMESPACES = new Set([
 
 // All Garmin + standard GPX namespaces. Anything outside this set is third-party.
 const KNOWN_NAMESPACES = new Set([
-  GPX_NS, GPXX_NS, XSI_NS, TRP_NS, CTX_NS, WPTX1_NS,
+  GPX_NS, GPXX_NS, XSI_NS, TRP_NS, CTX_NS, WPTX1_NS, RUMO_NS,
   ...DROP_NAMESPACES,
 ]);
 
@@ -101,6 +102,8 @@ export function convert(gpxString, options = {}) {
     const keep = opts.keep !== false;
     const addRteptsToWaypoints    = !!opts.addRteptsToWaypoints;
     const addUserNamedToWaypoints = !!opts.addUserNamedToWaypoints;
+    const convertToRumoColor      = !!opts.convertToRumoColor;
+    const convertToRumoShaping    = !!opts.convertToRumoShaping;
     const createDenseRoute = opts.createDenseRoute !== false;
     const toleranceM = opts.toleranceM ?? 10;
     const createTrack = opts.createTrack !== false;
@@ -187,11 +190,16 @@ export function convert(gpxString, options = {}) {
       routeStat.trackTrkpts = deduped.length;
       routeStat.trackCreated = true;
 
-      // Copy DisplayColor to track if kept.
+      // Copy DisplayColor to track if kept; also translate to Rumo if requested.
       const dcKey = GPXX_NS + '|DisplayColor';
-      if (extDecisions[dcKey] !== 'remove') {
-        const color = readRouteDisplayColor(rte);
-        if (color) trk.appendChild(buildColorExtensions(doc, 'TrackExtension', color));
+      const color = readRouteDisplayColor(rte);
+      if (color) {
+        if (extDecisions[dcKey] !== 'remove') {
+          trk.appendChild(buildColorExtensions(doc, 'TrackExtension', color));
+        }
+        if (convertToRumoColor) {
+          ensureExtensions(doc, trk).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+        }
       }
 
       newTracks.push(trk);
@@ -254,6 +262,16 @@ export function convert(gpxString, options = {}) {
 
       // Apply extension decisions to route-level extensions.
       applyExtensionDecisions(newRte, extDecisions);
+
+      if (convertToRumoColor) {
+        const color = readRouteDisplayColor(rte);
+        if (color) ensureExtensions(doc, newRte).appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
+      }
+      if (convertToRumoShaping) {
+        const rumoShaping = buildRumoShapingExt(doc, rteptEls);
+        if (rumoShaping) ensureExtensions(doc, newRte).appendChild(rumoShaping);
+      }
+
       newRoutes.push(newRte);
     } else if (addRteptsToWaypoints || addUserNamedToWaypoints) {
       // Route not kept, but waypoints requested.
@@ -281,10 +299,12 @@ export function convert(gpxString, options = {}) {
     const opts = trackOpts[ti] || {};
     const keep = opts.keep !== false;
     const extDecisions = opts.extensions || {};
+    const convertToRumoColor = !!opts.convertToRumoColor;
     const trkName = firstChildText(trk, GPX_NS, 'name') || ('Track ' + (ti + 1));
     const trkpts = trk.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
 
     if (keep) {
+      const color = convertToRumoColor ? readTrackDisplayColor(trk) : null;
       const cloned = trk.cloneNode(true);
       // Apply extension decisions to track-level, trkseg-level, and trkpt-level.
       applyExtensionDecisions(cloned, extDecisions);
@@ -293,6 +313,7 @@ export function convert(gpxString, options = {}) {
           applyExtensionDecisions(pt, extDecisions);
         }
       }
+      if (color) ensureExtensions(doc, cloned).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
       newTracks.push(cloned);
     }
 
@@ -716,6 +737,13 @@ function readRouteDisplayColor(rte) {
   return dc ? dc.textContent : null;
 }
 
+function readTrackDisplayColor(trk) {
+  const ext  = firstChildElNS(trk, GPX_NS, 'extensions');
+  const text = firstChildElNS(ext, GPXX_NS, 'TrackExtension');
+  const dc   = firstChildElNS(text, GPXX_NS, 'DisplayColor');
+  return dc ? dc.textContent : null;
+}
+
 function buildColorExtensions(doc, localName, color) {
   const wrap = doc.createElementNS(GPX_NS, 'extensions');
   const ext  = doc.createElementNS(GPXX_NS, 'gpxx:' + localName);
@@ -724,6 +752,41 @@ function buildColorExtensions(doc, localName, color) {
   ext.appendChild(dc);
   wrap.appendChild(ext);
   return wrap;
+}
+
+function ensureExtensions(doc, el) {
+  let ext = firstChildElNS(el, GPX_NS, 'extensions');
+  if (!ext) {
+    ext = doc.createElementNS(GPX_NS, 'extensions');
+    el.appendChild(ext);
+  }
+  return ext;
+}
+
+function buildRumoColorExt(doc, wrapperName, color) {
+  const ext = doc.createElementNS(RUMO_NS, 'rumo:' + wrapperName);
+  const dc  = doc.createElementNS(RUMO_NS, 'rumo:DisplayColor');
+  dc.textContent = color;
+  ext.appendChild(dc);
+  return ext;
+}
+
+function buildRumoShapingExt(doc, rteptEls) {
+  const shaping = doc.createElementNS(RUMO_NS, 'rumo:ShapingPoints');
+  for (const rtept of rteptEls) {
+    const rpe = firstChildElNS(firstChildElNS(rtept, GPX_NS, 'extensions'), GPXX_NS, 'RoutePointExtension');
+    if (!rpe) continue;
+    for (const rpt of childrenByNS(rpe, GPXX_NS, 'rpt')) {
+      const sp = doc.createElementNS(RUMO_NS, 'rumo:ShapingPoint');
+      sp.setAttribute('lat', rpt.getAttribute('lat'));
+      sp.setAttribute('lon', rpt.getAttribute('lon'));
+      shaping.appendChild(sp);
+    }
+  }
+  if (!shaping.firstChild) return null;
+  const rext = doc.createElementNS(RUMO_NS, 'rumo:RouteExtension');
+  rext.appendChild(shaping);
+  return rext;
 }
 
 /**
@@ -869,10 +932,12 @@ function scrubNamespaceDeclarations(gpx) {
   // Ensure default namespace.
   gpx.setAttribute('xmlns', GPX_NS);
 
-  // Ensure xmlns:gpxx is present/absent based on usage
-  // (buildColorExtensions uses createElementNS so we always need an explicit declaration).
+  // Ensure xmlns:gpxx and xmlns:rumo are present/absent based on usage.
   if (usedNS.has(GPXX_NS)) gpx.setAttribute('xmlns:gpxx', GPXX_NS);
   else if (gpx.hasAttribute('xmlns:gpxx')) gpx.removeAttribute('xmlns:gpxx');
+
+  if (usedNS.has(RUMO_NS)) gpx.setAttribute('xmlns:rumo', RUMO_NS);
+  else if (gpx.hasAttribute('xmlns:rumo')) gpx.removeAttribute('xmlns:rumo');
 
   // For all other xmlns:* declarations: keep only those whose namespace is used.
   const attrs = Array.from(gpx.attributes);

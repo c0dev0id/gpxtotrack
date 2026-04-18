@@ -1,4 +1,4 @@
-import { convert, analyzeInput, GPXX_NS, TRP_NS, CTX_NS, WPTX1_NS } from './gpxtotrack.js';
+import { convert, analyzeInput, GPXX_NS, TRP_NS, CTX_NS, WPTX1_NS, RUMO_NS } from './gpxtotrack.js';
 
 const TOLERANCE_STOPS_M = [10, 20, 50, 100, 250, 500, 750, 1000];
 const DEFAULT_TOLERANCE_INDEX = 4; // 250 m
@@ -162,6 +162,11 @@ function renderOptionsColumn(a) {
       if (r.extensions.some(e => e.localName === 'IsAutoNamed')) {
         group.appendChild(makeCheckbox('route-userwpts-' + r.index, 'Add user-named route points to waypoints', true, false));
       }
+      group.appendChild(makeCheckbox('route-rumoshaping-' + r.index, 'Translate shaping points to Rumo format', false, false));
+    }
+
+    if (r.extensions.some(e => e.localName === 'DisplayColor' && e.ns === GPXX_NS)) {
+      group.appendChild(makeCheckbox('route-rumocolor-' + r.index, 'Convert Garmin color to Rumo format', false, false));
     }
 
     // Extensions
@@ -181,6 +186,10 @@ function renderOptionsColumn(a) {
     group.appendChild(elText('div', t.name, 'opt-group-title'));
 
     group.appendChild(makeCheckbox('track-keep-' + t.index, 'Keep track', true, false));
+
+    if (t.extensions.some(e => e.localName === 'DisplayColor' && e.ns === GPXX_NS)) {
+      group.appendChild(makeCheckbox('track-rumocolor-' + t.index, 'Convert Garmin color to Rumo format', false, false));
+    }
 
     if (t.extensions.length) {
       group.appendChild(elText('div', 'Extensions', 'ext-section-label'));
@@ -228,6 +237,9 @@ function gatherOptions() {
       addUserNamedToWaypoints = checkboxVal('route-userwpts-' + r.index);
     }
 
+    const convertToRumoColor   = checkboxVal('route-rumocolor-' + r.index);
+    const convertToRumoShaping = checkboxVal('route-rumoshaping-' + r.index);
+
     const extensions = {};
     for (const ext of r.extensions) {
       const key = ext.ns + '|' + ext.localName;
@@ -235,7 +247,7 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    routes.push({ addRteptsToWaypoints, addUserNamedToWaypoints, createDenseRoute, toleranceM, createTrack, extensions });
+    routes.push({ addRteptsToWaypoints, addUserNamedToWaypoints, convertToRumoColor, convertToRumoShaping, createDenseRoute, toleranceM, createTrack, extensions });
   }
 
   const tracks = [];
@@ -249,7 +261,8 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    tracks.push({ keep, extensions });
+    const convertToRumoColor = checkboxVal('track-rumocolor-' + t.index);
+    tracks.push({ keep, convertToRumoColor, extensions });
   }
 
   const waypointExtensions = {};
@@ -279,14 +292,16 @@ function syncOptionsFromFirst() {
   if (analysis.routes.length > 1) {
     const first = analysis.routes[0];
     const removeVal = checkboxVal('route-remove-' + first.index);
-    let trackVal, denseVal, tolVal, wptsVal, userWptsVal;
+    let trackVal, denseVal, tolVal, wptsVal, userWptsVal, rumoShapingVal;
     if (first.hasShapingPoints) {
-      trackVal     = checkboxVal('route-track-' + first.index);
-      denseVal     = checkboxVal('route-dense-' + first.index);
-      tolVal       = document.getElementById('route-tol-' + first.index)?.value;
-      wptsVal      = checkboxVal('route-wpts-' + first.index);
-      userWptsVal  = checkboxVal('route-userwpts-' + first.index);
+      trackVal       = checkboxVal('route-track-' + first.index);
+      denseVal       = checkboxVal('route-dense-' + first.index);
+      tolVal         = document.getElementById('route-tol-' + first.index)?.value;
+      wptsVal        = checkboxVal('route-wpts-' + first.index);
+      userWptsVal    = checkboxVal('route-userwpts-' + first.index);
+      rumoShapingVal = checkboxVal('route-rumoshaping-' + first.index);
     }
+    const rumoColorVal = checkboxVal('route-rumocolor-' + first.index);
     const extVals = {};
     for (const ext of first.extensions) {
       const key = ext.ns + '|' + ext.localName;
@@ -309,7 +324,9 @@ function syncOptionsFromFirst() {
         }
         setCheckboxVal('route-wpts-' + r.index, wptsVal);
         setCheckboxVal('route-userwpts-' + r.index, userWptsVal);
+        setCheckboxVal('route-rumoshaping-' + r.index, rumoShapingVal);
       }
+      setCheckboxVal('route-rumocolor-' + r.index, rumoColorVal);
       for (const ext of r.extensions) {
         const key = ext.ns + '|' + ext.localName;
         if (extVals[key] != null) setRadioVal('rext-' + r.index + '-' + key, extVals[key]);
@@ -320,6 +337,7 @@ function syncOptionsFromFirst() {
   if (analysis.tracks.length > 1) {
     const first = analysis.tracks[0];
     const keepVal = checkboxVal('track-keep-' + first.index);
+    const trackRumoColorVal = checkboxVal('track-rumocolor-' + first.index);
     const extVals = {};
     for (const ext of first.extensions) {
       const key = ext.ns + '|' + ext.localName;
@@ -329,6 +347,7 @@ function syncOptionsFromFirst() {
     for (let i = 1; i < analysis.tracks.length; i++) {
       const t = analysis.tracks[i];
       setCheckboxVal('track-keep-' + t.index, keepVal);
+      setCheckboxVal('track-rumocolor-' + t.index, trackRumoColorVal);
       for (const ext of t.extensions) {
         const key = ext.ns + '|' + ext.localName;
         if (extVals[key] != null) setRadioVal('text-' + t.index + '-' + key, extVals[key]);
