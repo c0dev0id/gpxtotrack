@@ -205,7 +205,7 @@ export function convert(gpxString, options = {}) {
         }
         if (convertToRumoColor) {
           const exts = ensureExtensions(doc, trk);
-          exts.appendChild(doc.createComment(' Rumo: color converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
+          exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
           exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
           routeStat.rumoExtensions.push('track color');
         }
@@ -279,7 +279,7 @@ export function convert(gpxString, options = {}) {
         const color = readRouteDisplayColor(rte);
         if (color) {
           const exts = ensureExtensions(doc, newRte);
-          exts.appendChild(doc.createComment(' Rumo: color converted from gpxx:RouteExtension/DisplayColor "' + color + '" '));
+          exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:RouteExtension/DisplayColor "' + color + '" '));
           exts.appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
           routeStat.rumoExtensions.push('color');
         }
@@ -341,7 +341,7 @@ export function convert(gpxString, options = {}) {
       }
       if (color) {
         const exts = ensureExtensions(doc, cloned);
-        exts.appendChild(doc.createComment(' Rumo: color converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
+        exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
         exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
         trackRumoExts.push('color');
       }
@@ -751,6 +751,71 @@ function buildWaypointFromRtept(doc, p) {
   return wpt;
 }
 
+// Canonical VGA-palette RGB for each Garmin DisplayColor_t enum value.
+// Transparent is deliberately omitted: it has no RGB, so it can never be a
+// nearest-match target — it passes through by name only.
+const GARMIN_COLOR_RGB = {
+  Black:       [0x00, 0x00, 0x00],
+  DarkRed:     [0x80, 0x00, 0x00],
+  DarkGreen:   [0x00, 0x80, 0x00],
+  DarkYellow:  [0x80, 0x80, 0x00],
+  DarkBlue:    [0x00, 0x00, 0x80],
+  DarkMagenta: [0x80, 0x00, 0x80],
+  DarkCyan:    [0x00, 0x80, 0x80],
+  LightGray:   [0xC0, 0xC0, 0xC0],
+  DarkGray:    [0x80, 0x80, 0x80],
+  Red:         [0xFF, 0x00, 0x00],
+  Green:       [0x00, 0xFF, 0x00],
+  Yellow:      [0xFF, 0xFF, 0x00],
+  Blue:        [0x00, 0x00, 0xFF],
+  Magenta:     [0xFF, 0x00, 0xFF],
+  Cyan:        [0x00, 0xFF, 0xFF],
+  White:       [0xFF, 0xFF, 0xFF],
+};
+
+function garminNameToHex(name) {
+  const rgb = GARMIN_COLOR_RGB[name];
+  if (!rgb) return null;
+  const h = n => n.toString(16).padStart(2, '0').toUpperCase();
+  return '#' + h(rgb[0]) + h(rgb[1]) + h(rgb[2]);
+}
+
+function parseColorToRgb(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+  let m = /^#?([0-9a-f]{6})$/i.exec(s);
+  if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+  m = /^#?([0-9a-f]{3})$/i.exec(s);
+  if (m) return [0x11 * parseInt(m[1][0], 16), 0x11 * parseInt(m[1][1], 16), 0x11 * parseInt(m[1][2], 16)];
+  m = /^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(s);
+  if (m) return [+m[1], +m[2], +m[3]].map(n => Math.max(0, Math.min(255, n)));
+  const lower = s.toLowerCase();
+  for (const name of Object.keys(GARMIN_COLOR_RGB)) {
+    if (name.toLowerCase() === lower) return GARMIN_COLOR_RGB[name];
+  }
+  return null;
+}
+
+// Map any color value (Garmin name, CSS-like hex, rgb()) to the nearest Garmin
+// enum name by weighted-Euclidean RGB distance. 'Transparent' passes through.
+function nearestGarminName(value) {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  if (/^Transparent$/i.test(s)) return 'Transparent';
+  for (const name of Object.keys(GARMIN_COLOR_RGB)) {
+    if (name.toLowerCase() === s.toLowerCase()) return name;
+  }
+  const rgb = parseColorToRgb(s);
+  if (!rgb) return null;
+  let bestName = null, bestD = Infinity;
+  for (const [name, [r, g, b]] of Object.entries(GARMIN_COLOR_RGB)) {
+    const dr = rgb[0] - r, dg = rgb[1] - g, db = rgb[2] - b;
+    const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+    if (d < bestD) { bestD = d; bestName = name; }
+  }
+  return bestName;
+}
+
 function readRouteDisplayColor(rte) {
   const ext  = firstChildElNS(rte, GPX_NS, 'extensions');
   const rext = firstChildElNS(ext, GPXX_NS, 'RouteExtension');
@@ -784,10 +849,18 @@ function ensureExtensions(doc, el) {
   return ext;
 }
 
+// Rumo schema accepts name-or-hex. Emit hex so any Rumo-aware consumer
+// parses the color deterministically without relying on an implicit name set.
+// Fall back to the canonical name when there's no RGB (Transparent).
+function rumoColorValue(color) {
+  const canonical = nearestGarminName(color);
+  return garminNameToHex(canonical) || canonical || color;
+}
+
 function buildRumoColorExt(doc, wrapperName, color) {
   const ext = doc.createElementNS(RUMO_NS, 'rumo:' + wrapperName);
   const dc  = doc.createElementNS(RUMO_NS, 'rumo:DisplayColor');
-  dc.textContent = color;
+  dc.textContent = rumoColorValue(color);
   ext.appendChild(dc);
   return ext;
 }
