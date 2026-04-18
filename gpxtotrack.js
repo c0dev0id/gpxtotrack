@@ -74,23 +74,27 @@ export function convert(gpxString, options = {}) {
   for (const rte of inputRtes) if (rte.parentNode) rte.parentNode.removeChild(rte);
   for (const trk of inputTrks) if (trk.parentNode) trk.parentNode.removeChild(trk);
 
+  const stats = {
+    routes: [],
+    tracks: [],
+    outputWaypoints: 0,
+    bounds: null,
+    rumoWaypointTagsCount: 0,
+    viaPointsPromoted: 0,
+  };
+
   // Auto-convert wpt extension data before any extension filtering.
   for (const wpt of childrenByNS(gpx, GPX_NS, 'wpt')) {
     convertWptExtensionData(wpt, doc);
-    if (convertCategoriesToRumoTags) convertGarminCategoriesToRumoTags(wpt, doc);
+    if (convertCategoriesToRumoTags && convertGarminCategoriesToRumoTags(wpt, doc)) {
+      stats.rumoWaypointTagsCount++;
+    }
   }
 
   // Apply waypoint extension decisions to existing waypoints.
   for (const wpt of childrenByNS(gpx, GPX_NS, 'wpt')) {
     applyExtensionDecisions(wpt, wptExtDecisions);
   }
-
-  const stats = {
-    routes: [],
-    tracks: [],
-    outputWaypoints: 0,
-    bounds: null,
-  };
 
   const newWaypoints = [];
   const newTracks    = [];
@@ -101,9 +105,9 @@ export function convert(gpxString, options = {}) {
     const rte = inputRtes[ri];
     const opts = routeOpts[ri] || {};
     const keep = opts.keep !== false;
-    const addRteptsToWaypoints    = !!opts.addRteptsToWaypoints;
-    const addUserNamedToWaypoints = !!opts.addUserNamedToWaypoints;
-    const convertToRumoColor      = !!opts.convertToRumoColor;
+    const addRteptsToWaypoints   = !!opts.addRteptsToWaypoints;
+    const addViaPointsToWaypoints = !!opts.addViaPointsToWaypoints;
+    const convertToRumoColor     = !!opts.convertToRumoColor;
     const convertToRumoShaping    = !!opts.convertToRumoShaping;
     const createDenseRoute = opts.createDenseRoute !== false;
     const toleranceM = opts.toleranceM ?? 10;
@@ -122,10 +126,11 @@ export function convert(gpxString, options = {}) {
       denseRouteCreated: false,
       trackCreated: false,
       trackTrkpts: 0,
+      rumoExtensions: [],
     };
 
     // Skip entirely if not kept and no derived outputs requested.
-    if (!keep && !createTrack && !addRteptsToWaypoints && !addUserNamedToWaypoints) {
+    if (!keep && !createTrack && !addRteptsToWaypoints && !addViaPointsToWaypoints) {
       stats.routes.push(routeStat);
       continue;
     }
@@ -200,6 +205,7 @@ export function convert(gpxString, options = {}) {
         }
         if (convertToRumoColor) {
           ensureExtensions(doc, trk).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+          routeStat.rumoExtensions.push('track color');
         }
       }
 
@@ -231,9 +237,12 @@ export function convert(gpxString, options = {}) {
             cloneExtensions(p.rteptEl, rtept);
             applyExtensionDecisions(rtept, extDecisions);
           }
-          if (p.fromRtept && p.rteptEl && hasAnyNamedField(p.rteptEl)
-              && (addRteptsToWaypoints || (addUserNamedToWaypoints && !isRteptAutoNamed(p.rteptEl)))) {
-            newWaypoints.push(buildWaypointFromRtept(doc, p));
+          if (p.fromRtept && p.rteptEl) {
+            const vp = addViaPointsToWaypoints && isViaPoint(p.rteptEl);
+            if ((addRteptsToWaypoints && hasAnyNamedField(p.rteptEl)) || vp) {
+              newWaypoints.push(buildWaypointFromRtept(doc, p));
+              if (vp) stats.viaPointsPromoted++;
+            }
           }
           newRte.appendChild(rtept);
           routeStat.outputRtepts++;
@@ -244,10 +253,9 @@ export function convert(gpxString, options = {}) {
         newRte = rte.cloneNode(true);
         // Apply extension decisions to each rtept in the clone.
         for (const rtept of childrenByNS(newRte, GPX_NS, 'rtept')) {
-          const autoNamed = isRteptAutoNamed(rtept);
+          const vp = addViaPointsToWaypoints && isViaPoint(rtept);
           applyExtensionDecisions(rtept, extDecisions);
-          if (hasAnyNamedField(rtept)
-              && (addRteptsToWaypoints || (addUserNamedToWaypoints && !autoNamed))) {
+          if ((addRteptsToWaypoints && hasAnyNamedField(rtept)) || vp) {
             const lat = parseFloat(rtept.getAttribute('lat'));
             const lon = parseFloat(rtept.getAttribute('lon'));
             newWaypoints.push(buildWaypointFromRtept(doc, {
@@ -256,6 +264,7 @@ export function convert(gpxString, options = {}) {
               time: firstChildText(rtept, GPX_NS, 'time'),
               rteptEl: rtept,
             }));
+            if (vp) stats.viaPointsPromoted++;
           }
         }
         routeStat.outputRtepts = childrenByNS(newRte, GPX_NS, 'rtept').length;
@@ -266,19 +275,25 @@ export function convert(gpxString, options = {}) {
 
       if (convertToRumoColor) {
         const color = readRouteDisplayColor(rte);
-        if (color) ensureExtensions(doc, newRte).appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
+        if (color) {
+          ensureExtensions(doc, newRte).appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
+          routeStat.rumoExtensions.push('color');
+        }
       }
       if (convertToRumoShaping) {
         const rumoShaping = buildRumoShapingExt(doc, rteptEls);
-        if (rumoShaping) ensureExtensions(doc, newRte).appendChild(rumoShaping);
+        if (rumoShaping) {
+          ensureExtensions(doc, newRte).appendChild(rumoShaping);
+          routeStat.rumoExtensions.push('shaping points');
+        }
       }
 
       newRoutes.push(newRte);
-    } else if (addRteptsToWaypoints || addUserNamedToWaypoints) {
+    } else if (addRteptsToWaypoints || addViaPointsToWaypoints) {
       // Route not kept, but waypoints requested.
       for (const rt of rteptEls) {
-        if (hasAnyNamedField(rt)
-            && (addRteptsToWaypoints || (addUserNamedToWaypoints && !isRteptAutoNamed(rt)))) {
+        const vp = addViaPointsToWaypoints && isViaPoint(rt);
+        if ((addRteptsToWaypoints && hasAnyNamedField(rt)) || vp) {
           const lat = parseFloat(rt.getAttribute('lat'));
           const lon = parseFloat(rt.getAttribute('lon'));
           newWaypoints.push(buildWaypointFromRtept(doc, {
@@ -287,6 +302,7 @@ export function convert(gpxString, options = {}) {
             time: firstChildText(rt, GPX_NS, 'time'),
             rteptEl: rt,
           }));
+          if (vp) stats.viaPointsPromoted++;
         }
       }
     }
@@ -304,6 +320,7 @@ export function convert(gpxString, options = {}) {
     const trkName = firstChildText(trk, GPX_NS, 'name') || ('Track ' + (ti + 1));
     const trkpts = trk.getElementsByTagNameNS(GPX_NS, 'trkpt').length;
 
+    const trackRumoExts = [];
     if (keep) {
       const color = convertToRumoColor ? readTrackDisplayColor(trk) : null;
       const cloned = trk.cloneNode(true);
@@ -314,11 +331,14 @@ export function convert(gpxString, options = {}) {
           applyExtensionDecisions(pt, extDecisions);
         }
       }
-      if (color) ensureExtensions(doc, cloned).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+      if (color) {
+        ensureExtensions(doc, cloned).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+        trackRumoExts.push('color');
+      }
       newTracks.push(cloned);
     }
 
-    stats.tracks.push({ name: trkName, kept: keep, trkpts });
+    stats.tracks.push({ name: trkName, kept: keep, trkpts, rumoExtensions: trackRumoExts });
   }
 
   removeEmptyExtensions(gpx);
@@ -573,6 +593,7 @@ export function analyzeInput(gpxString, options = {}) {
 
     let shapingPointCount = 0;
     let hasShapingPoints = false;
+    let hasViaPoints = false;
     let isTrip = false;
     let isRoutePointExt = false;
 
@@ -585,6 +606,7 @@ export function analyzeInput(gpxString, options = {}) {
         shapingPointCount += childrenByNS(rpe, GPXX_NS, 'rpt').length;
         hasShapingPoints = true;
       }
+      if (!hasViaPoints && isViaPoint(rtept)) hasViaPoints = true;
       // Check for TRP extensions on rtepts
       for (let c = ext.firstChild; c; c = c.nextSibling) {
         if (c.nodeType === 1 && c.namespaceURI === TRP_NS) { isTrip = true; break; }
@@ -607,6 +629,7 @@ export function analyzeInput(gpxString, options = {}) {
       rteptCount: rteptEls.length,
       shapingPointCount,
       hasShapingPoints,
+      hasViaPoints,
       isTrip,
       isRoutePointExt,
       extensions,
@@ -705,15 +728,12 @@ function hasAnyNamedField(el) {
          || firstChildElNS(el, GPX_NS, 'sym'));
 }
 
-function isRteptAutoNamed(rteptEl) {
-  const extsEl = firstChildElNS(rteptEl, GPX_NS, 'extensions');
-  if (!extsEl) return false;
-  let el = firstChildElNS(extsEl, GPXX_NS, 'IsAutoNamed');
-  if (!el) {
-    const rpe = firstChildElNS(extsEl, GPXX_NS, 'RoutePointExtension');
-    if (rpe) el = firstChildElNS(rpe, GPXX_NS, 'IsAutoNamed');
-  }
-  return el ? el.textContent.trim() === 'true' : false;
+function isViaPoint(rteptEl) {
+  const ext = firstChildElNS(rteptEl, GPX_NS, 'extensions');
+  if (!ext) return false;
+  if (firstChildElNS(ext, TRP_NS, 'ViaPoint')) return true;
+  const rpe = firstChildElNS(ext, TRP_NS, 'RoutePointExtension');
+  return rpe ? !!firstChildElNS(rpe, TRP_NS, 'ViaPoint') : false;
 }
 
 function formatCoord(n) {
@@ -794,15 +814,16 @@ function convertGarminCategoriesToRumoTags(wpt, doc) {
   const ext    = firstChildElNS(wpt, GPX_NS, 'extensions');
   const wptExt = firstChildElNS(ext, GPXX_NS, 'WaypointExtension');
   const cats   = firstChildElNS(wptExt, GPXX_NS, 'Categories');
-  if (!cats) return;
+  if (!cats) return false;
   const tags = childrenByNS(cats, GPXX_NS, 'Category')
     .map(c => c.textContent.trim()).filter(Boolean);
-  if (!tags.length) return;
+  if (!tags.length) return false;
   const rumoWptExt = doc.createElementNS(RUMO_NS, 'rumo:WaypointExtension');
   const rumoTags   = doc.createElementNS(RUMO_NS, 'rumo:WaypointTags');
   rumoTags.textContent = tags.join(',');
   rumoWptExt.appendChild(rumoTags);
   ensureExtensions(doc, wpt).appendChild(rumoWptExt);
+  return true;
 }
 
 /**

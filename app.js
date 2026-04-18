@@ -159,8 +159,8 @@ function renderOptionsColumn(a) {
       group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', true, false));
       group.appendChild(makeToleranceSlider('route-tol-' + r.index));
       group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add all route points to waypoints', false, false));
-      if (r.extensions.some(e => e.localName === 'IsAutoNamed')) {
-        group.appendChild(makeCheckbox('route-userwpts-' + r.index, 'Add user-named route points to waypoints', true, false));
+      if (r.hasViaPoints) {
+        group.appendChild(makeCheckbox('route-viawpts-' + r.index, 'Add via-points to waypoints list', false, false));
       }
       group.appendChild(makeCheckbox('route-rumoshaping-' + r.index, 'Translate shaping points to Rumo format', false, false));
     }
@@ -220,7 +220,7 @@ function gatherOptions() {
   const routes = [];
   for (const r of analysis.routes) {
     if (checkboxVal('route-remove-' + r.index)) {
-      routes.push({ keep: false, createTrack: false, createDenseRoute: false, addRteptsToWaypoints: false });
+      routes.push({ keep: false, createTrack: false, createDenseRoute: false, addRteptsToWaypoints: false, addViaPointsToWaypoints: false });
       continue;
     }
 
@@ -228,7 +228,6 @@ function gatherOptions() {
     let createDenseRoute = false;
     let toleranceM = 10;
     let addRteptsToWaypoints = false;
-    let addUserNamedToWaypoints = false;
 
     if (r.hasShapingPoints) {
       createTrack = checkboxVal('route-track-' + r.index);
@@ -236,9 +235,10 @@ function gatherOptions() {
       toleranceM = TOLERANCE_STOPS_M[parseInt(
         document.getElementById('route-tol-' + r.index)?.value || '0', 10
       )] ?? TOLERANCE_STOPS_M[DEFAULT_TOLERANCE_INDEX];
-      addRteptsToWaypoints    = checkboxVal('route-wpts-' + r.index);
-      addUserNamedToWaypoints = checkboxVal('route-userwpts-' + r.index);
+      addRteptsToWaypoints = checkboxVal('route-wpts-' + r.index);
     }
+
+    const addViaPointsToWaypoints = checkboxVal('route-viawpts-' + r.index);
 
     const convertToRumoColor   = checkboxVal('route-rumocolor-' + r.index);
     const convertToRumoShaping = checkboxVal('route-rumoshaping-' + r.index);
@@ -250,7 +250,7 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    routes.push({ addRteptsToWaypoints, addUserNamedToWaypoints, convertToRumoColor, convertToRumoShaping, createDenseRoute, toleranceM, createTrack, extensions });
+    routes.push({ addRteptsToWaypoints, addViaPointsToWaypoints, convertToRumoColor, convertToRumoShaping, createDenseRoute, toleranceM, createTrack, extensions });
   }
 
   const tracks = [];
@@ -296,15 +296,15 @@ function syncOptionsFromFirst() {
   if (analysis.routes.length > 1) {
     const first = analysis.routes[0];
     const removeVal = checkboxVal('route-remove-' + first.index);
-    let trackVal, denseVal, tolVal, wptsVal, userWptsVal, rumoShapingVal;
+    let trackVal, denseVal, tolVal, wptsVal, rumoShapingVal;
     if (first.hasShapingPoints) {
       trackVal       = checkboxVal('route-track-' + first.index);
       denseVal       = checkboxVal('route-dense-' + first.index);
       tolVal         = document.getElementById('route-tol-' + first.index)?.value;
       wptsVal        = checkboxVal('route-wpts-' + first.index);
-      userWptsVal    = checkboxVal('route-userwpts-' + first.index);
       rumoShapingVal = checkboxVal('route-rumoshaping-' + first.index);
     }
+    const viaWptsVal   = checkboxVal('route-viawpts-' + first.index);
     const rumoColorVal = checkboxVal('route-rumocolor-' + first.index);
     const extVals = {};
     for (const ext of first.extensions) {
@@ -327,9 +327,9 @@ function syncOptionsFromFirst() {
           slider.dispatchEvent(new Event('input'));
         }
         setCheckboxVal('route-wpts-' + r.index, wptsVal);
-        setCheckboxVal('route-userwpts-' + r.index, userWptsVal);
         setCheckboxVal('route-rumoshaping-' + r.index, rumoShapingVal);
       }
+      setCheckboxVal('route-viawpts-' + r.index, viaWptsVal);
       setCheckboxVal('route-rumocolor-' + r.index, rumoColorVal);
       for (const ext of r.extensions) {
         const key = ext.ns + '|' + ext.localName;
@@ -415,6 +415,9 @@ function renderOutputColumn(a, stats) {
     if (rs.trackCreated) {
       block.appendChild(elText('p', rs.trackTrkpts + ' track points (new track)', 'section-detail'));
     }
+    if (rs.rumoExtensions?.length) {
+      block.appendChild(elText('p', 'Rumo: ' + rs.rumoExtensions.join(', '), 'section-detail'));
+    }
     outputBody.appendChild(block);
   }
 
@@ -423,11 +426,15 @@ function renderOutputColumn(a, stats) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', ts.name, 'section-title'));
     block.appendChild(elText('p', ts.kept ? ts.trkpts + ' track points' : 'Removed', 'section-detail'));
+    if (ts.rumoExtensions?.length) {
+      block.appendChild(elText('p', 'Rumo: ' + ts.rumoExtensions.join(', '), 'section-detail'));
+    }
     outputBody.appendChild(block);
   }
 
   // Output routes/tracks/wpts from analysis
-  if (a.routes.length || a.tracks.length || a.waypoints.count) {
+  if (a.routes.length || a.tracks.length || a.waypoints.count
+      || stats.rumoWaypointTagsCount || stats.viaPointsPromoted) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', 'Summary', 'section-title'));
     if (a.routes.length)
@@ -436,6 +443,14 @@ function renderOutputColumn(a, stats) {
       block.appendChild(elText('p', a.tracks.length + ' track' + (a.tracks.length === 1 ? '' : 's'), 'section-detail'));
     if (a.waypoints.count)
       block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
+    if (stats.viaPointsPromoted) {
+      const n = stats.viaPointsPromoted;
+      block.appendChild(elText('p', n + ' via-point' + (n !== 1 ? 's' : '') + ' added as waypoints', 'section-detail'));
+    }
+    if (stats.rumoWaypointTagsCount) {
+      const n = stats.rumoWaypointTagsCount;
+      block.appendChild(elText('p', n + ' waypoint' + (n !== 1 ? 's' : '') + ' with Rumo tags', 'section-detail'));
+    }
     if (stats.bounds)
       block.appendChild(elText('p',
         fmtCoord(stats.bounds.minLat) + ',' + fmtCoord(stats.bounds.minLon) +
