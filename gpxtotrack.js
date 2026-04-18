@@ -204,7 +204,9 @@ export function convert(gpxString, options = {}) {
           trk.appendChild(buildColorExtensions(doc, 'TrackExtension', color));
         }
         if (convertToRumoColor) {
-          ensureExtensions(doc, trk).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+          const exts = ensureExtensions(doc, trk);
+          exts.appendChild(doc.createComment(' Rumo: color converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
+          exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
           routeStat.rumoExtensions.push('track color');
         }
       }
@@ -276,14 +278,20 @@ export function convert(gpxString, options = {}) {
       if (convertToRumoColor) {
         const color = readRouteDisplayColor(rte);
         if (color) {
-          ensureExtensions(doc, newRte).appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
+          const exts = ensureExtensions(doc, newRte);
+          exts.appendChild(doc.createComment(' Rumo: color converted from gpxx:RouteExtension/DisplayColor "' + color + '" '));
+          exts.appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
           routeStat.rumoExtensions.push('color');
         }
       }
       if (convertToRumoShaping) {
         const rumoShaping = buildRumoShapingExt(doc, rteptEls);
         if (rumoShaping) {
-          ensureExtensions(doc, newRte).appendChild(rumoShaping);
+          const spCount = rumoShaping.firstChild
+            ? rumoShaping.firstChild.childNodes.length : 0;
+          const exts = ensureExtensions(doc, newRte);
+          exts.appendChild(doc.createComment(' Rumo: ' + spCount + ' shaping point(s) translated from gpxx:RoutePointExtension/rpt '));
+          exts.appendChild(rumoShaping);
           routeStat.rumoExtensions.push('shaping points');
         }
       }
@@ -332,7 +340,9 @@ export function convert(gpxString, options = {}) {
         }
       }
       if (color) {
-        ensureExtensions(doc, cloned).appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+        const exts = ensureExtensions(doc, cloned);
+        exts.appendChild(doc.createComment(' Rumo: color converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
+        exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
         trackRumoExts.push('color');
       }
       newTracks.push(cloned);
@@ -354,6 +364,8 @@ export function convert(gpxString, options = {}) {
   scrubNamespaceDeclarations(gpx);
 
   stats.bounds = computeBounds(gpx);
+
+  prettyPrint(gpx, 0);
 
   const xml = new Serializer().serializeToString(doc);
   const out = xml.startsWith('<?xml')
@@ -822,7 +834,9 @@ function convertGarminCategoriesToRumoTags(wpt, doc) {
   const rumoTags   = doc.createElementNS(RUMO_NS, 'rumo:WaypointTags');
   rumoTags.textContent = tags.join(',');
   rumoWptExt.appendChild(rumoTags);
-  ensureExtensions(doc, wpt).appendChild(rumoWptExt);
+  const exts = ensureExtensions(doc, wpt);
+  exts.appendChild(doc.createComment(' Rumo: waypoint tags from gpxx:WaypointExtension/Categories [' + tags.join(', ') + '] '));
+  exts.appendChild(rumoWptExt);
   return true;
 }
 
@@ -939,9 +953,13 @@ function insertInOrder(gpx, newWpts, newRtes, newTrks) {
     buckets[key].push(k);
     gpx.removeChild(k);
   }
+  const doc = gpx.ownerDocument;
   for (const m of buckets.metadata)   gpx.appendChild(m);
+  if (buckets.wpt.length) gpx.appendChild(doc.createComment(' Waypoints '));
   for (const w of buckets.wpt)        gpx.appendChild(w);
+  if (buckets.rte.length) gpx.appendChild(doc.createComment(' Routes '));
   for (const r of buckets.rte)        gpx.appendChild(r);
+  if (buckets.trk.length) gpx.appendChild(doc.createComment(' Tracks '));
   for (const t of buckets.trk)        gpx.appendChild(t);
   for (const o of buckets.other)      gpx.appendChild(o);
   for (const e of buckets.extensions) gpx.appendChild(e);
@@ -959,6 +977,32 @@ function refreshMetadataTime(gpx, doc) {
     metadata.appendChild(t);
   }
   t.textContent = new Date().toISOString();
+}
+
+function prettyPrint(node, depth) {
+  const indent = '\n' + '  '.repeat(depth);
+  const childIndent = '\n' + '  '.repeat(depth + 1);
+  const doc = node.ownerDocument || node;
+
+  // Collect child nodes, skipping existing whitespace-only text nodes.
+  const children = Array.from(node.childNodes).filter(
+    c => !(c.nodeType === 3 && c.textContent.trim() === '')
+  );
+  if (!children.length) return;
+
+  // Mixed-content check: if any child is a non-whitespace text node, don't indent.
+  const hasMixedText = children.some(c => c.nodeType === 3);
+  if (hasMixedText) return;
+
+  // Remove existing whitespace text children, then re-insert with indentation.
+  while (node.firstChild) node.removeChild(node.firstChild);
+
+  for (const child of children) {
+    node.appendChild(doc.createTextNode(childIndent));
+    node.appendChild(child);
+    if (child.nodeType === 1) prettyPrint(child, depth + 1);
+  }
+  node.appendChild(doc.createTextNode(indent));
 }
 
 function scrubNamespaceDeclarations(gpx) {

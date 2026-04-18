@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Pretty-printed XML output**: Converted GPX files are now indented with 2-space nesting for
+  readability. Mixed-content elements (e.g. `<name>`) are left untouched.
+- **Section separator comments**: `<!-- Waypoints -->`, `<!-- Routes -->`, and `<!-- Tracks -->`
+  comments are inserted before each non-empty section in the output GPX.
+- **Extension conversion comments**: Each Rumo extension element is preceded by an XML comment
+  explaining its origin (e.g. `<!-- Rumo: color converted from gpxx:RouteExtension/DisplayColor "Red" -->`).
+
+### Added
 - **Per-route/track control**: Each route and track in the file gets individual keep/remove,
   conversion options (create track, create dense route, tolerance), and per-extension keep/remove
   toggles. Replaces the old global options panel.
