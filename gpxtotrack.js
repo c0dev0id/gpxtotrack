@@ -210,10 +210,10 @@ export function convert(gpxString, options = {}) {
       const color = readRouteDisplayColor(rte);
       if (color) {
         if (extDecisions[dcKey] !== 'remove') {
-          setGarminColor(doc, trk, 'TrackExtension', color);
+          setDisplayColor(doc, trk, GPXX_NS, 'TrackExtension', color);
         }
         if (convertToRumoColor) {
-          setRumoColor(doc, trk, 'TrackExtension', color,
+          setDisplayColor(doc, trk, RUMO_NS, 'TrackExtension', rumoColorValue(color),
             ' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" ');
         }
       }
@@ -288,7 +288,7 @@ export function convert(gpxString, options = {}) {
       if (convertToRumoColor) {
         const color = readRouteDisplayColor(rte);
         if (color) {
-          setRumoColor(doc, newRte, 'RouteExtension', color,
+          setDisplayColor(doc, newRte, RUMO_NS, 'RouteExtension', rumoColorValue(color),
             ' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:RouteExtension/DisplayColor "' + color + '" ');
         }
       }
@@ -304,7 +304,7 @@ export function convert(gpxString, options = {}) {
         if (rumoColor) {
           const garminName = nearestGarminName(rumoColor);
           if (garminName) {
-            setGarminColor(doc, newRte, 'RouteExtension', garminName,
+            setDisplayColor(doc, newRte, GPXX_NS, 'RouteExtension', garminName,
               ' Garmin: color "' + garminName + '" matched from rumo:RouteExtension/DisplayColor "' + rumoColor + '" ');
           }
         }
@@ -388,7 +388,7 @@ export function convert(gpxString, options = {}) {
         }
       }
       if (color) {
-        setRumoColor(doc, cloned, 'TrackExtension', color,
+        setDisplayColor(doc, cloned, RUMO_NS, 'TrackExtension', rumoColorValue(color),
           ' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" ');
       }
       if (convertRumoColorToGarmin) {
@@ -396,7 +396,7 @@ export function convert(gpxString, options = {}) {
         if (rumoColor) {
           const garminName = nearestGarminName(rumoColor);
           if (garminName) {
-            setGarminColor(doc, cloned, 'TrackExtension', garminName,
+            setDisplayColor(doc, cloned, GPXX_NS, 'TrackExtension', garminName,
               ' Garmin: color "' + garminName + '" matched from rumo:TrackExtension/DisplayColor "' + rumoColor + '" ');
           }
         }
@@ -1007,34 +1007,27 @@ function readRumoWaypointTags(wpt) {
   return tagsEl.textContent.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-// Set (or overwrite) the gpxx:DisplayColor inside an existing or new
-// gpxx:{wrapperName} wrapper of `element`. Preserves any sibling children of
-// the wrapper (e.g. other Garmin extensions under the same wrapper).
-function setGarminColor(doc, element, wrapperName, color, comment) {
+const NS_PREFIX = {
+  [GPXX_NS]:  'gpxx',
+  [RUMO_NS]:  'rumo',
+  [WPTX1_NS]: 'wptx1',
+  [TRP_NS]:   'trp',
+  [CTX_NS]:   'ctx',
+};
+
+function setDisplayColor(doc, element, ns, wrapperName, color, comment) {
   const exts = ensureExtensions(doc, element);
-  const wrapper = ensureSingleWrapper(doc, exts, GPXX_NS, wrapperName, 'gpxx');
-  removeChildrenByNS(wrapper, GPXX_NS, 'DisplayColor');
+  const wrapper = ensureSingleWrapper(doc, exts, ns, wrapperName);
+  removeChildrenByNS(wrapper, ns, 'DisplayColor');
   if (comment) exts.insertBefore(doc.createComment(comment), wrapper);
-  const dc = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
+  const dc = doc.createElementNS(ns, NS_PREFIX[ns] + ':DisplayColor');
   dc.textContent = color;
   wrapper.appendChild(dc);
 }
 
-// Set (or overwrite) the rumo:DisplayColor inside a single rumo:{wrapperName}.
-function setRumoColor(doc, element, wrapperName, sourceColor, comment) {
-  const exts = ensureExtensions(doc, element);
-  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, wrapperName, 'rumo');
-  removeChildrenByNS(wrapper, RUMO_NS, 'DisplayColor');
-  if (comment) exts.insertBefore(doc.createComment(comment), wrapper);
-  const dc = doc.createElementNS(RUMO_NS, 'rumo:DisplayColor');
-  dc.textContent = rumoColorValue(sourceColor);
-  wrapper.appendChild(dc);
-}
-
-// Set (or overwrite) rumo:ShapingPoints inside a single rumo:RouteExtension.
 function setRumoShapingPoints(doc, route, shapingPointsEl, comment) {
   const exts = ensureExtensions(doc, route);
-  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, 'RouteExtension', 'rumo');
+  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, 'RouteExtension');
   removeChildrenByNS(wrapper, RUMO_NS, 'ShapingPoints');
   if (comment) exts.insertBefore(doc.createComment(comment), wrapper);
   wrapper.appendChild(shapingPointsEl);
@@ -1049,16 +1042,14 @@ function ensureExtensions(doc, el) {
   return ext;
 }
 
-// Return the first wrapper of (ns, localName) inside exts, creating one if
-// absent; if duplicates exist, merge their children into the first and drop
-// the rest. Guarantees exactly one wrapper of that kind.
-function ensureSingleWrapper(doc, exts, ns, localName, prefix) {
-  const wrappers = [];
-  for (let c = exts.firstChild; c; c = c.nextSibling) {
-    if (c.nodeType === 1 && c.namespaceURI === ns && c.localName === localName) wrappers.push(c);
-  }
+// Return the sole <ns:localName> wrapper under exts, creating or merging
+// duplicates as needed. Merging preserves children carried over from the
+// input document so two successive conversions writing to the same wrapper
+// don't emit sibling wrappers.
+function ensureSingleWrapper(doc, exts, ns, localName) {
+  const wrappers = childrenByNS(exts, ns, localName);
   if (!wrappers.length) {
-    const w = doc.createElementNS(ns, (prefix ? prefix + ':' : '') + localName);
+    const w = doc.createElementNS(ns, NS_PREFIX[ns] + ':' + localName);
     exts.appendChild(w);
     return w;
   }
@@ -1070,13 +1061,8 @@ function ensureSingleWrapper(doc, exts, ns, localName, prefix) {
   return head;
 }
 
-// Remove all direct element children of parent matching (ns, localName).
 function removeChildrenByNS(parent, ns, localName) {
-  const victims = [];
-  for (let c = parent.firstChild; c; c = c.nextSibling) {
-    if (c.nodeType === 1 && c.namespaceURI === ns && c.localName === localName) victims.push(c);
-  }
-  for (const v of victims) parent.removeChild(v);
+  for (const v of childrenByNS(parent, ns, localName)) parent.removeChild(v);
 }
 
 // Rumo schema accepts name-or-hex. Emit hex so any Rumo-aware consumer
@@ -1106,7 +1092,7 @@ function convertRumoTagsToGarminCategories(wpt, doc) {
   const tags = readRumoWaypointTags(wpt);
   if (!tags.length) return false;
   const exts = ensureExtensions(doc, wpt);
-  const wrapper = ensureSingleWrapper(doc, exts, GPXX_NS, 'WaypointExtension', 'gpxx');
+  const wrapper = ensureSingleWrapper(doc, exts, GPXX_NS, 'WaypointExtension');
   removeChildrenByNS(wrapper, GPXX_NS, 'Categories');
   exts.insertBefore(doc.createComment(' Garmin: categories from rumo:WaypointTags [' + tags.join(', ') + '] '), wrapper);
   const cats = doc.createElementNS(GPXX_NS, 'gpxx:Categories');
@@ -1128,7 +1114,7 @@ function convertGarminCategoriesToRumoTags(wpt, doc) {
     .map(c => c.textContent.trim()).filter(Boolean);
   if (!tags.length) return false;
   const exts = ensureExtensions(doc, wpt);
-  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, 'WaypointExtension', 'rumo');
+  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, 'WaypointExtension');
   removeChildrenByNS(wrapper, RUMO_NS, 'WaypointTags');
   exts.insertBefore(doc.createComment(' Rumo: waypoint tags from gpxx:WaypointExtension/Categories [' + tags.join(', ') + '] '), wrapper);
   const rumoTags = doc.createElementNS(RUMO_NS, 'rumo:WaypointTags');
