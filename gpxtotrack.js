@@ -66,6 +66,7 @@ export function convert(gpxString, options = {}) {
   const trackOpts = options.tracks || [];
   const wptExtDecisions = options.waypointExtensions || {};
   const convertCategoriesToRumoTags = !!options.convertCategoriesToRumoTags;
+  const convertRumoTagsToCategories = !!options.convertRumoTagsToCategories;
 
   const inputRtes = Array.from(childrenByNS(gpx, GPX_NS, 'rte'));
   const inputTrks = Array.from(childrenByNS(gpx, GPX_NS, 'trk'));
@@ -80,6 +81,7 @@ export function convert(gpxString, options = {}) {
     outputWaypoints: 0,
     bounds: null,
     rumoWaypointTagsCount: 0,
+    garminCategoriesCount: 0,
     viaPointsPromoted: 0,
   };
 
@@ -88,6 +90,9 @@ export function convert(gpxString, options = {}) {
     convertWptExtensionData(wpt, doc);
     if (convertCategoriesToRumoTags && convertGarminCategoriesToRumoTags(wpt, doc)) {
       stats.rumoWaypointTagsCount++;
+    }
+    if (convertRumoTagsToCategories && convertRumoTagsToGarminCategories(wpt, doc)) {
+      stats.garminCategoriesCount++;
     }
   }
 
@@ -109,6 +114,8 @@ export function convert(gpxString, options = {}) {
     const addViaPointsToWaypoints = !!opts.addViaPointsToWaypoints;
     const convertToRumoColor     = !!opts.convertToRumoColor;
     const convertToRumoShaping    = !!opts.convertToRumoShaping;
+    const convertRumoColorToGarmin   = !!opts.convertRumoColorToGarmin;
+    const convertRumoShapingToGarmin = !!opts.convertRumoShapingToGarmin;
     const createDenseRoute = opts.createDenseRoute !== false;
     const toleranceM = opts.toleranceM ?? 10;
     const createTrack = opts.createTrack !== false;
@@ -127,6 +134,7 @@ export function convert(gpxString, options = {}) {
       trackCreated: false,
       trackTrkpts: 0,
       rumoExtensions: [],
+      garminExtensions: [],
     };
 
     // Skip entirely if not kept and no derived outputs requested.
@@ -293,6 +301,49 @@ export function convert(gpxString, options = {}) {
           exts.appendChild(doc.createComment(' Rumo: ' + spCount + ' shaping point(s) translated from gpxx:RoutePointExtension/rpt '));
           exts.appendChild(rumoShaping);
           routeStat.rumoExtensions.push('shaping points');
+        }
+      }
+      if (convertRumoColorToGarmin) {
+        const rumoColor = readRumoRouteColor(rte);
+        if (rumoColor) {
+          const garminName = nearestGarminName(rumoColor);
+          if (garminName) {
+            const exts = ensureExtensions(doc, newRte);
+            exts.appendChild(doc.createComment(' Garmin: color "' + garminName + '" matched from rumo:RouteExtension/DisplayColor "' + rumoColor + '" '));
+            const rext = doc.createElementNS(GPXX_NS, 'gpxx:RouteExtension');
+            const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
+            dc.textContent = garminName;
+            rext.appendChild(dc);
+            exts.appendChild(rext);
+            routeStat.garminExtensions.push('color');
+          }
+        }
+      }
+      if (convertRumoShapingToGarmin) {
+        const shapingPts = readRumoShapingPoints(rte);
+        const outRtepts  = Array.from(childrenByNS(newRte, GPX_NS, 'rtept'));
+        if (shapingPts.length && outRtepts.length >= 2) {
+          const coords = outRtepts.map(rt => ({
+            lat: parseFloat(rt.getAttribute('lat')),
+            lon: parseFloat(rt.getAttribute('lon')),
+          }));
+          const partitions = assignShapingToRtepts(shapingPts, coords);
+          let attachedCount = 0;
+          for (const [segIdx, pts] of partitions.entries()) {
+            const parent = outRtepts[segIdx];
+            const exts = ensureExtensions(doc, parent);
+            exts.appendChild(doc.createComment(' Garmin: ' + pts.length + ' shaping coord(s) from rumo:ShapingPoints between rtept ' + segIdx + ' and ' + (segIdx + 1) + ' '));
+            const rpe = doc.createElementNS(GPXX_NS, 'gpxx:RoutePointExtension');
+            for (const p of pts) {
+              const rpt = doc.createElementNS(GPXX_NS, 'gpxx:rpt');
+              rpt.setAttribute('lat', formatCoord(p.lat));
+              rpt.setAttribute('lon', formatCoord(p.lon));
+              rpe.appendChild(rpt);
+            }
+            exts.appendChild(rpe);
+            attachedCount += pts.length;
+          }
+          if (attachedCount) routeStat.garminExtensions.push('shaping points');
         }
       }
 
@@ -624,6 +675,9 @@ export function analyzeInput(gpxString, options = {}) {
     const allElements = [rte, ...rteptEls];
     const extensions = enumerateExtensions(allElements).map(classifyExtension);
 
+    const hasRumoColor   = readRumoRouteColor(rte) !== null;
+    const hasRumoShaping = readRumoShapingPoints(rte).length > 0;
+
     return {
       index, name,
       rteptCount: rteptEls.length,
@@ -632,6 +686,8 @@ export function analyzeInput(gpxString, options = {}) {
       hasViaPoints,
       isTrip,
       isRoutePointExt,
+      hasRumoColor,
+      hasRumoShaping,
       extensions,
     };
   });
@@ -650,11 +706,13 @@ export function analyzeInput(gpxString, options = {}) {
       }
     }
     const extensions = enumerateExtensions(allElements).map(classifyExtension);
+    const hasRumoColor = readRumoTrackColor(trk) !== null;
 
-    return { index, name, trkptCount, extensions };
+    return { index, name, trkptCount, hasRumoColor, extensions };
   });
 
   const wptExtensions = enumerateExtensions(wptEls).map(classifyExtension);
+  const hasRumoWaypointTags = wptEls.some(w => readRumoWaypointTags(w).length > 0);
 
   // Bounds
   let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
@@ -678,7 +736,7 @@ export function analyzeInput(gpxString, options = {}) {
   return {
     routes,
     tracks,
-    waypoints: { count: wptEls.length, extensions: wptExtensions },
+    waypoints: { count: wptEls.length, extensions: wptExtensions, hasRumoWaypointTags },
     bounds,
   };
 }
@@ -830,6 +888,42 @@ function readTrackDisplayColor(trk) {
   return dc ? dc.textContent : null;
 }
 
+function readRumoRouteColor(rte) {
+  const ext  = firstChildElNS(rte, GPX_NS, 'extensions');
+  const rext = firstChildElNS(ext, RUMO_NS, 'RouteExtension');
+  const dc   = firstChildElNS(rext, RUMO_NS, 'DisplayColor');
+  return dc ? dc.textContent.trim() : null;
+}
+
+function readRumoTrackColor(trk) {
+  const ext  = firstChildElNS(trk, GPX_NS, 'extensions');
+  const text = firstChildElNS(ext, RUMO_NS, 'TrackExtension');
+  const dc   = firstChildElNS(text, RUMO_NS, 'DisplayColor');
+  return dc ? dc.textContent.trim() : null;
+}
+
+function readRumoShapingPoints(rte) {
+  const ext  = firstChildElNS(rte, GPX_NS, 'extensions');
+  const rext = firstChildElNS(ext, RUMO_NS, 'RouteExtension');
+  const list = firstChildElNS(rext, RUMO_NS, 'ShapingPoints');
+  if (!list) return [];
+  const out = [];
+  for (const sp of childrenByNS(list, RUMO_NS, 'ShapingPoint')) {
+    const lat = parseFloat(sp.getAttribute('lat'));
+    const lon = parseFloat(sp.getAttribute('lon'));
+    if (Number.isFinite(lat) && Number.isFinite(lon)) out.push({ lat, lon });
+  }
+  return out;
+}
+
+function readRumoWaypointTags(wpt) {
+  const ext    = firstChildElNS(wpt, GPX_NS, 'extensions');
+  const wptExt = firstChildElNS(ext, RUMO_NS, 'WaypointExtension');
+  const tagsEl = firstChildElNS(wptExt, RUMO_NS, 'WaypointTags');
+  if (!tagsEl) return [];
+  return tagsEl.textContent.split(',').map(s => s.trim()).filter(Boolean);
+}
+
 function buildColorExtensions(doc, localName, color) {
   const wrap = doc.createElementNS(GPX_NS, 'extensions');
   const ext  = doc.createElementNS(GPXX_NS, 'gpxx:' + localName);
@@ -881,6 +975,23 @@ function buildRumoShapingExt(doc, rteptEls) {
   const rext = doc.createElementNS(RUMO_NS, 'rumo:RouteExtension');
   rext.appendChild(shaping);
   return rext;
+}
+
+function convertRumoTagsToGarminCategories(wpt, doc) {
+  const tags = readRumoWaypointTags(wpt);
+  if (!tags.length) return false;
+  const wptExt = doc.createElementNS(GPXX_NS, 'gpxx:WaypointExtension');
+  const cats   = doc.createElementNS(GPXX_NS, 'gpxx:Categories');
+  for (const t of tags) {
+    const c = doc.createElementNS(GPXX_NS, 'gpxx:Category');
+    c.textContent = t;
+    cats.appendChild(c);
+  }
+  wptExt.appendChild(cats);
+  const exts = ensureExtensions(doc, wpt);
+  exts.appendChild(doc.createComment(' Garmin: categories from rumo:WaypointTags [' + tags.join(', ') + '] '));
+  exts.appendChild(wptExt);
+  return true;
 }
 
 function convertGarminCategoriesToRumoTags(wpt, doc) {
@@ -1171,6 +1282,30 @@ function rdpSegment(points, lo, hi, tol, keep) {
 
 // Equirectangular projection to local meters, then perpendicular distance
 // from p to segment a-b. Accurate enough for the scale of a single leg.
+// Assign each shaping point (in order) to the rtept-to-rtept segment it fits
+// best, with forward-only advancement: once a later shape picks segment S, no
+// later shape picks a segment before S. Returns a Map of rteptIndex → coords[].
+// The shape attaches to the rtept at the *start* of the chosen segment, which
+// matches Garmin's convention (rtept N owns the shape between N and N+1).
+function assignShapingToRtepts(shapingPts, rteptCoords) {
+  const partitions = new Map();
+  const segCount = rteptCoords.length - 1;
+  if (segCount < 1 || !shapingPts.length) return partitions;
+
+  let minSeg = 0;
+  for (const p of shapingPts) {
+    let bestSeg = minSeg, bestD = Infinity;
+    for (let i = minSeg; i < segCount; i++) {
+      const d = perpDistanceM(p, rteptCoords[i], rteptCoords[i + 1]);
+      if (d < bestD) { bestD = d; bestSeg = i; }
+    }
+    if (!partitions.has(bestSeg)) partitions.set(bestSeg, []);
+    partitions.get(bestSeg).push(p);
+    minSeg = bestSeg;
+  }
+  return partitions;
+}
+
 function perpDistanceM(p, a, b) {
   const R = 6371008.8;
   const lat0 = (a.lat + b.lat) * 0.5 * Math.PI / 180;
