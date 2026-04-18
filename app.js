@@ -462,7 +462,8 @@ function renderOutputColumn(a, stats) {
 
   // Output routes/tracks/wpts from analysis
   if (a.routes.length || a.tracks.length || a.waypoints.count
-      || stats.rumoWaypointTagsCount || stats.garminCategoriesCount || stats.viaPointsPromoted) {
+      || stats.rumoWaypointTagsCount || stats.garminCategoriesCount
+      || stats.viaPointsPromoted || stats.namedRteptsPromoted) {
     const block = el('div', 'section-block');
     block.appendChild(elText('div', 'Summary', 'section-title'));
     if (a.routes.length)
@@ -471,6 +472,10 @@ function renderOutputColumn(a, stats) {
       block.appendChild(elText('p', a.tracks.length + ' track' + (a.tracks.length === 1 ? '' : 's'), 'section-detail'));
     if (a.waypoints.count)
       block.appendChild(elText('p', a.waypoints.count + ' waypoint' + (a.waypoints.count === 1 ? '' : 's'), 'section-detail'));
+    if (stats.namedRteptsPromoted) {
+      const n = stats.namedRteptsPromoted;
+      block.appendChild(elText('p', n + ' named route point' + (n !== 1 ? 's' : '') + ' promoted to waypoints', 'section-detail'));
+    }
     if (stats.viaPointsPromoted) {
       const n = stats.viaPointsPromoted;
       block.appendChild(elText('p', n + ' Garmin via-point' + (n !== 1 ? 's' : '') + ' added as waypoints', 'section-detail'));

@@ -83,6 +83,7 @@ export function convert(gpxString, options = {}) {
     rumoWaypointTagsCount: 0,
     garminCategoriesCount: 0,
     viaPointsPromoted: 0,
+    namedRteptsPromoted: 0,
   };
 
   // Auto-convert wpt extension data before any extension filtering.
@@ -252,6 +253,7 @@ export function convert(gpxString, options = {}) {
             if ((addRteptsToWaypoints && hasAnyNamedField(p.rteptEl)) || vp) {
               newWaypoints.push(buildWaypointFromRtept(doc, p));
               if (vp) stats.viaPointsPromoted++;
+              else     stats.namedRteptsPromoted++;
             }
           }
           newRte.appendChild(rtept);
@@ -275,6 +277,7 @@ export function convert(gpxString, options = {}) {
               rteptEl: rtept,
             }));
             if (vp) stats.viaPointsPromoted++;
+            else     stats.namedRteptsPromoted++;
           }
         }
         routeStat.outputRtepts = childrenByNS(newRte, GPX_NS, 'rtept').length;
@@ -362,6 +365,7 @@ export function convert(gpxString, options = {}) {
             rteptEl: rt,
           }));
           if (vp) stats.viaPointsPromoted++;
+          else     stats.namedRteptsPromoted++;
         }
       }
     }
