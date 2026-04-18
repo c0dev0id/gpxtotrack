@@ -210,12 +210,11 @@ export function convert(gpxString, options = {}) {
       const color = readRouteDisplayColor(rte);
       if (color) {
         if (extDecisions[dcKey] !== 'remove') {
-          trk.appendChild(buildColorExtensions(doc, 'TrackExtension', color));
+          setGarminColor(doc, trk, 'TrackExtension', color);
         }
         if (convertToRumoColor) {
-          const exts = ensureExtensions(doc, trk);
-          exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
-          exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+          setRumoColor(doc, trk, 'TrackExtension', color,
+            ' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" ');
         }
       }
 
@@ -289,19 +288,15 @@ export function convert(gpxString, options = {}) {
       if (convertToRumoColor) {
         const color = readRouteDisplayColor(rte);
         if (color) {
-          const exts = ensureExtensions(doc, newRte);
-          exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:RouteExtension/DisplayColor "' + color + '" '));
-          exts.appendChild(buildRumoColorExt(doc, 'RouteExtension', color));
+          setRumoColor(doc, newRte, 'RouteExtension', color,
+            ' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:RouteExtension/DisplayColor "' + color + '" ');
         }
       }
       if (convertToRumoShaping) {
-        const rumoShaping = buildRumoShapingExt(doc, rteptEls);
-        if (rumoShaping) {
-          const spCount = rumoShaping.firstChild
-            ? rumoShaping.firstChild.childNodes.length : 0;
-          const exts = ensureExtensions(doc, newRte);
-          exts.appendChild(doc.createComment(' Rumo: ' + spCount + ' shaping point(s) translated from gpxx:RoutePointExtension/rpt '));
-          exts.appendChild(rumoShaping);
+        const shapingPts = buildRumoShapingPoints(doc, rteptEls);
+        if (shapingPts) {
+          setRumoShapingPoints(doc, newRte, shapingPts,
+            ' Rumo: ' + shapingPts.childNodes.length + ' shaping point(s) translated from gpxx:RoutePointExtension/rpt ');
         }
       }
       if (convertRumoColorToGarmin) {
@@ -309,13 +304,8 @@ export function convert(gpxString, options = {}) {
         if (rumoColor) {
           const garminName = nearestGarminName(rumoColor);
           if (garminName) {
-            const exts = ensureExtensions(doc, newRte);
-            exts.appendChild(doc.createComment(' Garmin: color "' + garminName + '" matched from rumo:RouteExtension/DisplayColor "' + rumoColor + '" '));
-            const rext = doc.createElementNS(GPXX_NS, 'gpxx:RouteExtension');
-            const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
-            dc.textContent = garminName;
-            rext.appendChild(dc);
-            exts.appendChild(rext);
+            setGarminColor(doc, newRte, 'RouteExtension', garminName,
+              ' Garmin: color "' + garminName + '" matched from rumo:RouteExtension/DisplayColor "' + rumoColor + '" ');
           }
         }
       }
@@ -328,6 +318,13 @@ export function convert(gpxString, options = {}) {
             lon: parseFloat(rt.getAttribute('lon')),
           }));
           const partitions = assignShapingToRtepts(shapingPts, coords);
+          // Overwrite: clear any existing gpxx:RoutePointExtension on every
+          // rtept before attaching the converted shaping. Without this, a
+          // kept-from-input RPE would coexist with the converted one.
+          for (const rt of outRtepts) {
+            const ext = firstChildElNS(rt, GPX_NS, 'extensions');
+            if (ext) removeChildrenByNS(ext, GPXX_NS, 'RoutePointExtension');
+          }
           for (const [segIdx, pts] of partitions.entries()) {
             const parent = outRtepts[segIdx];
             const exts = ensureExtensions(doc, parent);
@@ -391,22 +388,16 @@ export function convert(gpxString, options = {}) {
         }
       }
       if (color) {
-        const exts = ensureExtensions(doc, cloned);
-        exts.appendChild(doc.createComment(' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" '));
-        exts.appendChild(buildRumoColorExt(doc, 'TrackExtension', color));
+        setRumoColor(doc, cloned, 'TrackExtension', color,
+          ' Rumo: color ' + rumoColorValue(color) + ' converted from gpxx:TrackExtension/DisplayColor "' + color + '" ');
       }
       if (convertRumoColorToGarmin) {
         const rumoColor = readRumoTrackColor(trk);
         if (rumoColor) {
           const garminName = nearestGarminName(rumoColor);
           if (garminName) {
-            const exts = ensureExtensions(doc, cloned);
-            exts.appendChild(doc.createComment(' Garmin: color "' + garminName + '" matched from rumo:TrackExtension/DisplayColor "' + rumoColor + '" '));
-            const text = doc.createElementNS(GPXX_NS, 'gpxx:TrackExtension');
-            const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
-            dc.textContent = garminName;
-            text.appendChild(dc);
-            exts.appendChild(text);
+            setGarminColor(doc, cloned, 'TrackExtension', garminName,
+              ' Garmin: color "' + garminName + '" matched from rumo:TrackExtension/DisplayColor "' + rumoColor + '" ');
           }
         }
       }
@@ -1016,14 +1007,37 @@ function readRumoWaypointTags(wpt) {
   return tagsEl.textContent.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-function buildColorExtensions(doc, localName, color) {
-  const wrap = doc.createElementNS(GPX_NS, 'extensions');
-  const ext  = doc.createElementNS(GPXX_NS, 'gpxx:' + localName);
-  const dc   = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
+// Set (or overwrite) the gpxx:DisplayColor inside an existing or new
+// gpxx:{wrapperName} wrapper of `element`. Preserves any sibling children of
+// the wrapper (e.g. other Garmin extensions under the same wrapper).
+function setGarminColor(doc, element, wrapperName, color, comment) {
+  const exts = ensureExtensions(doc, element);
+  const wrapper = ensureSingleWrapper(doc, exts, GPXX_NS, wrapperName, 'gpxx');
+  removeChildrenByNS(wrapper, GPXX_NS, 'DisplayColor');
+  if (comment) exts.insertBefore(doc.createComment(comment), wrapper);
+  const dc = doc.createElementNS(GPXX_NS, 'gpxx:DisplayColor');
   dc.textContent = color;
-  ext.appendChild(dc);
-  wrap.appendChild(ext);
-  return wrap;
+  wrapper.appendChild(dc);
+}
+
+// Set (or overwrite) the rumo:DisplayColor inside a single rumo:{wrapperName}.
+function setRumoColor(doc, element, wrapperName, sourceColor, comment) {
+  const exts = ensureExtensions(doc, element);
+  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, wrapperName, 'rumo');
+  removeChildrenByNS(wrapper, RUMO_NS, 'DisplayColor');
+  if (comment) exts.insertBefore(doc.createComment(comment), wrapper);
+  const dc = doc.createElementNS(RUMO_NS, 'rumo:DisplayColor');
+  dc.textContent = rumoColorValue(sourceColor);
+  wrapper.appendChild(dc);
+}
+
+// Set (or overwrite) rumo:ShapingPoints inside a single rumo:RouteExtension.
+function setRumoShapingPoints(doc, route, shapingPointsEl, comment) {
+  const exts = ensureExtensions(doc, route);
+  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, 'RouteExtension', 'rumo');
+  removeChildrenByNS(wrapper, RUMO_NS, 'ShapingPoints');
+  if (comment) exts.insertBefore(doc.createComment(comment), wrapper);
+  wrapper.appendChild(shapingPointsEl);
 }
 
 function ensureExtensions(doc, el) {
@@ -1035,6 +1049,36 @@ function ensureExtensions(doc, el) {
   return ext;
 }
 
+// Return the first wrapper of (ns, localName) inside exts, creating one if
+// absent; if duplicates exist, merge their children into the first and drop
+// the rest. Guarantees exactly one wrapper of that kind.
+function ensureSingleWrapper(doc, exts, ns, localName, prefix) {
+  const wrappers = [];
+  for (let c = exts.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 1 && c.namespaceURI === ns && c.localName === localName) wrappers.push(c);
+  }
+  if (!wrappers.length) {
+    const w = doc.createElementNS(ns, (prefix ? prefix + ':' : '') + localName);
+    exts.appendChild(w);
+    return w;
+  }
+  const head = wrappers[0];
+  for (let i = 1; i < wrappers.length; i++) {
+    while (wrappers[i].firstChild) head.appendChild(wrappers[i].firstChild);
+    exts.removeChild(wrappers[i]);
+  }
+  return head;
+}
+
+// Remove all direct element children of parent matching (ns, localName).
+function removeChildrenByNS(parent, ns, localName) {
+  const victims = [];
+  for (let c = parent.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 1 && c.namespaceURI === ns && c.localName === localName) victims.push(c);
+  }
+  for (const v of victims) parent.removeChild(v);
+}
+
 // Rumo schema accepts name-or-hex. Emit hex so any Rumo-aware consumer
 // parses the color deterministically without relying on an implicit name set.
 // Fall back to the canonical name when there's no RGB (Transparent).
@@ -1043,15 +1087,7 @@ function rumoColorValue(color) {
   return garminNameToHex(canonical) || canonical || color;
 }
 
-function buildRumoColorExt(doc, wrapperName, color) {
-  const ext = doc.createElementNS(RUMO_NS, 'rumo:' + wrapperName);
-  const dc  = doc.createElementNS(RUMO_NS, 'rumo:DisplayColor');
-  dc.textContent = rumoColorValue(color);
-  ext.appendChild(dc);
-  return ext;
-}
-
-function buildRumoShapingExt(doc, rteptEls) {
+function buildRumoShapingPoints(doc, rteptEls) {
   const shaping = doc.createElementNS(RUMO_NS, 'rumo:ShapingPoints');
   for (const rtept of rteptEls) {
     const rpe = firstChildElNS(firstChildElNS(rtept, GPX_NS, 'extensions'), GPXX_NS, 'RoutePointExtension');
@@ -1063,26 +1099,23 @@ function buildRumoShapingExt(doc, rteptEls) {
       shaping.appendChild(sp);
     }
   }
-  if (!shaping.firstChild) return null;
-  const rext = doc.createElementNS(RUMO_NS, 'rumo:RouteExtension');
-  rext.appendChild(shaping);
-  return rext;
+  return shaping.firstChild ? shaping : null;
 }
 
 function convertRumoTagsToGarminCategories(wpt, doc) {
   const tags = readRumoWaypointTags(wpt);
   if (!tags.length) return false;
-  const wptExt = doc.createElementNS(GPXX_NS, 'gpxx:WaypointExtension');
-  const cats   = doc.createElementNS(GPXX_NS, 'gpxx:Categories');
+  const exts = ensureExtensions(doc, wpt);
+  const wrapper = ensureSingleWrapper(doc, exts, GPXX_NS, 'WaypointExtension', 'gpxx');
+  removeChildrenByNS(wrapper, GPXX_NS, 'Categories');
+  exts.insertBefore(doc.createComment(' Garmin: categories from rumo:WaypointTags [' + tags.join(', ') + '] '), wrapper);
+  const cats = doc.createElementNS(GPXX_NS, 'gpxx:Categories');
   for (const t of tags) {
     const c = doc.createElementNS(GPXX_NS, 'gpxx:Category');
     c.textContent = t;
     cats.appendChild(c);
   }
-  wptExt.appendChild(cats);
-  const exts = ensureExtensions(doc, wpt);
-  exts.appendChild(doc.createComment(' Garmin: categories from rumo:WaypointTags [' + tags.join(', ') + '] '));
-  exts.appendChild(wptExt);
+  wrapper.appendChild(cats);
   return true;
 }
 
@@ -1094,13 +1127,13 @@ function convertGarminCategoriesToRumoTags(wpt, doc) {
   const tags = childrenByNS(cats, GPXX_NS, 'Category')
     .map(c => c.textContent.trim()).filter(Boolean);
   if (!tags.length) return false;
-  const rumoWptExt = doc.createElementNS(RUMO_NS, 'rumo:WaypointExtension');
-  const rumoTags   = doc.createElementNS(RUMO_NS, 'rumo:WaypointTags');
-  rumoTags.textContent = tags.join(',');
-  rumoWptExt.appendChild(rumoTags);
   const exts = ensureExtensions(doc, wpt);
-  exts.appendChild(doc.createComment(' Rumo: waypoint tags from gpxx:WaypointExtension/Categories [' + tags.join(', ') + '] '));
-  exts.appendChild(rumoWptExt);
+  const wrapper = ensureSingleWrapper(doc, exts, RUMO_NS, 'WaypointExtension', 'rumo');
+  removeChildrenByNS(wrapper, RUMO_NS, 'WaypointTags');
+  exts.insertBefore(doc.createComment(' Rumo: waypoint tags from gpxx:WaypointExtension/Categories [' + tags.join(', ') + '] '), wrapper);
+  const rumoTags = doc.createElementNS(RUMO_NS, 'rumo:WaypointTags');
+  rumoTags.textContent = tags.join(',');
+  wrapper.appendChild(rumoTags);
   return true;
 }
 
