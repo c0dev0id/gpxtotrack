@@ -99,7 +99,8 @@ export function convert(gpxString, options = {}) {
     const rte = inputRtes[ri];
     const opts = routeOpts[ri] || {};
     const keep = opts.keep !== false;
-    const addRteptsToWaypoints = !!opts.addRteptsToWaypoints;
+    const addRteptsToWaypoints    = !!opts.addRteptsToWaypoints;
+    const addUserNamedToWaypoints = !!opts.addUserNamedToWaypoints;
     const createDenseRoute = opts.createDenseRoute !== false;
     const toleranceM = opts.toleranceM ?? 10;
     const createTrack = opts.createTrack !== false;
@@ -120,7 +121,7 @@ export function convert(gpxString, options = {}) {
     };
 
     // Skip entirely if not kept and no derived outputs requested.
-    if (!keep && !createTrack && !addRteptsToWaypoints) {
+    if (!keep && !createTrack && !addRteptsToWaypoints && !addUserNamedToWaypoints) {
       stats.routes.push(routeStat);
       continue;
     }
@@ -221,7 +222,8 @@ export function convert(gpxString, options = {}) {
             cloneExtensions(p.rteptEl, rtept);
             applyExtensionDecisions(rtept, extDecisions);
           }
-          if (addRteptsToWaypoints && p.fromRtept && p.rteptEl && hasAnyNamedField(p.rteptEl)) {
+          if (p.fromRtept && p.rteptEl && hasAnyNamedField(p.rteptEl)
+              && (addRteptsToWaypoints || (addUserNamedToWaypoints && !isRteptAutoNamed(p.rteptEl)))) {
             newWaypoints.push(buildWaypointFromRtept(doc, p));
           }
           newRte.appendChild(rtept);
@@ -233,8 +235,10 @@ export function convert(gpxString, options = {}) {
         newRte = rte.cloneNode(true);
         // Apply extension decisions to each rtept in the clone.
         for (const rtept of childrenByNS(newRte, GPX_NS, 'rtept')) {
+          const autoNamed = isRteptAutoNamed(rtept);
           applyExtensionDecisions(rtept, extDecisions);
-          if (addRteptsToWaypoints && hasAnyNamedField(rtept)) {
+          if (hasAnyNamedField(rtept)
+              && (addRteptsToWaypoints || (addUserNamedToWaypoints && !autoNamed))) {
             const lat = parseFloat(rtept.getAttribute('lat'));
             const lon = parseFloat(rtept.getAttribute('lon'));
             newWaypoints.push(buildWaypointFromRtept(doc, {
@@ -251,10 +255,11 @@ export function convert(gpxString, options = {}) {
       // Apply extension decisions to route-level extensions.
       applyExtensionDecisions(newRte, extDecisions);
       newRoutes.push(newRte);
-    } else if (addRteptsToWaypoints) {
+    } else if (addRteptsToWaypoints || addUserNamedToWaypoints) {
       // Route not kept, but waypoints requested.
       for (const rt of rteptEls) {
-        if (hasAnyNamedField(rt)) {
+        if (hasAnyNamedField(rt)
+            && (addRteptsToWaypoints || (addUserNamedToWaypoints && !isRteptAutoNamed(rt)))) {
           const lat = parseFloat(rt.getAttribute('lat'));
           const lon = parseFloat(rt.getAttribute('lon'));
           newWaypoints.push(buildWaypointFromRtept(doc, {
@@ -676,6 +681,17 @@ function hasAnyNamedField(el) {
          || firstChildElNS(el, GPX_NS, 'desc')
          || firstChildElNS(el, GPX_NS, 'cmt')
          || firstChildElNS(el, GPX_NS, 'sym'));
+}
+
+function isRteptAutoNamed(rteptEl) {
+  const extsEl = firstChildElNS(rteptEl, GPX_NS, 'extensions');
+  if (!extsEl) return false;
+  let el = firstChildElNS(extsEl, GPXX_NS, 'IsAutoNamed');
+  if (!el) {
+    const rpe = firstChildElNS(extsEl, GPXX_NS, 'RoutePointExtension');
+    if (rpe) el = firstChildElNS(rpe, GPXX_NS, 'IsAutoNamed');
+  }
+  return el ? el.textContent.trim() === 'true' : false;
 }
 
 function formatCoord(n) {

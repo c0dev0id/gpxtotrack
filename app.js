@@ -158,7 +158,10 @@ function renderOptionsColumn(a) {
       group.appendChild(makeCheckbox('route-track-' + r.index, 'Create track from shaping points', true, false));
       group.appendChild(makeCheckbox('route-dense-' + r.index, 'Create dense route', true, false));
       group.appendChild(makeToleranceSlider('route-tol-' + r.index));
-      group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add route points to waypoints', false, false));
+      group.appendChild(makeCheckbox('route-wpts-' + r.index, 'Add all route points to waypoints', false, false));
+      if (r.extensions.some(e => e.localName === 'IsAutoNamed')) {
+        group.appendChild(makeCheckbox('route-userwpts-' + r.index, 'Add user-named route points to waypoints', true, false));
+      }
     }
 
     // Extensions
@@ -213,6 +216,7 @@ function gatherOptions() {
     let createDenseRoute = false;
     let toleranceM = 10;
     let addRteptsToWaypoints = false;
+    let addUserNamedToWaypoints = false;
 
     if (r.hasShapingPoints) {
       createTrack = checkboxVal('route-track-' + r.index);
@@ -220,7 +224,8 @@ function gatherOptions() {
       toleranceM = TOLERANCE_STOPS_M[parseInt(
         document.getElementById('route-tol-' + r.index)?.value || '0', 10
       )] ?? TOLERANCE_STOPS_M[DEFAULT_TOLERANCE_INDEX];
-      addRteptsToWaypoints = checkboxVal('route-wpts-' + r.index);
+      addRteptsToWaypoints    = checkboxVal('route-wpts-' + r.index);
+      addUserNamedToWaypoints = checkboxVal('route-userwpts-' + r.index);
     }
 
     const extensions = {};
@@ -230,7 +235,7 @@ function gatherOptions() {
       extensions[key] = val || ext.defaultAction;
     }
 
-    routes.push({ addRteptsToWaypoints, createDenseRoute, toleranceM, createTrack, extensions });
+    routes.push({ addRteptsToWaypoints, addUserNamedToWaypoints, createDenseRoute, toleranceM, createTrack, extensions });
   }
 
   const tracks = [];
@@ -274,12 +279,13 @@ function syncOptionsFromFirst() {
   if (analysis.routes.length > 1) {
     const first = analysis.routes[0];
     const removeVal = checkboxVal('route-remove-' + first.index);
-    let trackVal, denseVal, tolVal, wptsVal;
+    let trackVal, denseVal, tolVal, wptsVal, userWptsVal;
     if (first.hasShapingPoints) {
-      trackVal = checkboxVal('route-track-' + first.index);
-      denseVal = checkboxVal('route-dense-' + first.index);
-      tolVal   = document.getElementById('route-tol-' + first.index)?.value;
-      wptsVal  = checkboxVal('route-wpts-' + first.index);
+      trackVal     = checkboxVal('route-track-' + first.index);
+      denseVal     = checkboxVal('route-dense-' + first.index);
+      tolVal       = document.getElementById('route-tol-' + first.index)?.value;
+      wptsVal      = checkboxVal('route-wpts-' + first.index);
+      userWptsVal  = checkboxVal('route-userwpts-' + first.index);
     }
     const extVals = {};
     for (const ext of first.extensions) {
@@ -302,6 +308,7 @@ function syncOptionsFromFirst() {
           slider.dispatchEvent(new Event('input'));
         }
         setCheckboxVal('route-wpts-' + r.index, wptsVal);
+        setCheckboxVal('route-userwpts-' + r.index, userWptsVal);
       }
       for (const ext of r.extensions) {
         const key = ext.ns + '|' + ext.localName;
